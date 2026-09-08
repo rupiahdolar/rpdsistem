@@ -1,0 +1,1 @@
+<img src="{{ asset('img/mcpos.png') }}" alt="MC-POS" {{ $attributes->merge(['class' => 'w-auto']) }}>
