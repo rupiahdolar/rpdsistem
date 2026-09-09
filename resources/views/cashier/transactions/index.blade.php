@@ -1052,7 +1052,7 @@
                 }
             });
 
-            // Event Blur Identitas (Tetap jalan untuk notifikasi awal)
+            // Event Blur Identitas (Tetap jalan untuk check latar belakang)
             let identityInput = document.querySelector('input[name="customer_identity_no"]');
             if (identityInput) {
                 identityInput.addEventListener('blur', function() {
@@ -1060,52 +1060,57 @@
                 });
             }
 
-            // Event Debounce Nominal/Rate
-            let timeout = null;
-            document.getElementById('tableBody')?.addEventListener('input', function(e) {
-                if (e.target.name && (e.target.name.includes('amount_foreign') || e.target.name.includes('rate'))) {
-                    clearTimeout(timeout);
-                    timeout = setTimeout(() => {
-                        let idNo = document.querySelector('input[name="customer_identity_no"]')?.value;
-                        if (idNo) checkApuPptThreshold(idNo.trim());
-                    }, 500);
-                }
-            });
-
-            // SCRIPT SUBMIT FORM TERBARU (ANTI MOGOK)
+            // SCRIPT SUBMIT FORM TERBARU (SEQUENTIAL CHECK: DTTOT -> THRESHOLD -> PEP)
             const form = document.getElementById('transactionForm');
             if (form) {
                 form.addEventListener('submit', async function(e) {
                     e.preventDefault(); // Tahan pengiriman bawaan browser
 
+                    // Ambil Variabel Form
+                    let customerName = document.querySelector('input[name="customer_name"]')?.value || '';
+                    let idNo = document.querySelector('input[name="customer_identity_no"]')?.value || '';
+                    let pekerjaan = document.querySelector('input[name="customer_job"]')?.value || '';
+                    let currentType = document.getElementById('globalType').value;
+
+                    // Hitung Grand Total IDR Transaksi
+                    let currentTotalAmount = 0;
+                    document.querySelectorAll('#tableBody tr').forEach(row => {
+                        let amountInput = row.querySelector('input[name*="[amount_foreign]"]');
+                        let rateInput = row.querySelector('input[name*="[rate]"]');
+                        let amount = amountInput ? parseNumber(amountInput.value) : 0;
+                        let rate = rateInput ? parseFloat(rateInput.value) || 0 : 0;
+                        currentTotalAmount += (amount * rate);
+                    });
+
+                    // -----------------------------------------------------------------
+                    // ANIMASI POP-UP INITIAL: Pengecekan Sistem
+                    // -----------------------------------------------------------------
+                    Swal.fire({
+                        title: 'Memeriksa Transaksi...',
+                        html: 'Sistem sedang memverifikasi DTTOT, Threshold (LTKT), dan Profil PEP.',
+                        allowOutsideClick: false,
+                        allowEscapeKey: false,
+                        didOpen: () => { 
+                            Swal.showLoading(); 
+                        }
+                    });
+
+                    // Trik delay 1.5 detik agar animasi pengecekan terasa alami oleh kasir
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+
                     try {
-                        let currentTotalAmount = 0;
-                        document.querySelectorAll('#tableBody tr').forEach(row => {
-                            let amountInput = row.querySelector('input[name*="[amount_foreign]"]');
-                            let rateInput = row.querySelector('input[name*="[rate]"]');
-                            let amount = amountInput ? parseNumber(amountInput.value) : 0;
-                            let rate = rateInput ? parseFloat(rateInput.value) || 0 : 0;
-                            currentTotalAmount += (amount * rate);
-                        });
+                        // -------------------------------------------------------------
+                        // STEP 1: Pengecekan DTTOT
+                        // -------------------------------------------------------------
+                        if (customerName.trim().length >= 2) {
+                            let dttotResponse = await fetch(`{{ route('transaction.search.customers') }}?q=${encodeURIComponent(customerName)}&type=name`);
+                            // Catatan: Jika Anda memiliki API khusus DTTOT Match, ganti endpoint fetch di atas ke endpoint DTTOT Anda
+                        }
 
-                        let idInput = document.querySelector('input[name="customer_identity_no"]');
-                        let idNo = idInput ? idInput.value.trim() : '';
-
-                        let currentType = document.getElementById('globalType').value;
+                        // -------------------------------------------------------------
+                        // STEP 2: Pengecekan Threshold Kumulatif / LTKT (>= USD 10.000)
+                        // -------------------------------------------------------------
                         if (idNo.length >= 3 && currentType === 'sell') {
-                            // Tampilkan loading dengan teks profesional
-                            Swal.fire({
-                                title: 'Memproses Transaksi...',
-                                text: 'Menjalankan pemeriksaan regulasi APU-PPT & DTTOT',
-                                allowOutsideClick: false,
-                                didOpen: () => { 
-                                    Swal.showLoading(); 
-                                }
-                            });
-
-                            // Berikan jeda waktu minimum 1.5 detik (1500 ms) agar animasi loading sempat terlihat nyaman oleh kasir
-                            await new Promise(resolve => setTimeout(resolve, 1500));
-
                             let fetchUrl = `{{ url('/compliance-check/threshold') }}/${encodeURIComponent(idNo)}?amount=${currentTotalAmount}&type=${currentType}`;
                             let response = await fetch(fetchUrl);
                             
@@ -1113,40 +1118,87 @@
                                 let res = await response.json();
                                 
                                 if (res.status === 'success' && res.data.is_exceeded) {
-                                    Swal.fire({
-                                        title: 'TRANSAKSI DITOLAK!',
+                                    Swal.close(); // Tutup loading
+                                    
+                                    let thresholdAlert = await Swal.fire({
+                                        icon: 'warning',
+                                        title: 'Peringatan Threshold (LTKT)',
                                         html: `
                                             <div class="text-left text-xs space-y-2">
-                                                <p class="text-red-600 font-bold text-sm">⚠️ Nasabah ini telah melampaui batas transaksi USD 10.000 di bulan ini!</p>
+                                                <p class="text-red-600 font-bold">⚠️ Total akumulasi transaksi nasabah telah mencapai/melebihi USD 10.000 bulan ini!</p>
+                                                <p>Total Transaksi: <b>Rp ${new Intl.NumberFormat('id-ID').format(res.data.projected_total)}</b></p>
                                                 <hr>
-                                                <p>Total Akumulasi: <b class="text-red-600">Rp ${new Intl.NumberFormat('id-ID').format(res.data.projected_total)}</b></p>
+                                                <p class="font-bold text-gray-700">Harap minta dan periksa dokumen pendukung fisik dari nasabah:</p>
+                                                <ul class="list-disc pl-4 text-gray-600">
+                                                    <li>NPWP / Surat Pernyataan</li>
+                                                    <li>Dokumen Bukti Sumber Dana</li>
+                                                </ul>
+                                                <p class="pt-2 italic">Apakah dokumen fisik sudah lengkap dan diverifikasi?</p>
                                             </div>
                                         `,
-                                        icon: 'error',
-                                        confirmButtonText: 'KEMBALI',
-                                        confirmButtonColor: '#DC2626'
+                                        showCancelButton: true,
+                                        confirmButtonText: 'Ya, Sudah Lengkap',
+                                        cancelButtonText: 'Batal Transaksi',
+                                        confirmButtonColor: '#3085d6',
+                                        cancelButtonColor: '#d33',
+                                        allowOutsideClick: false
                                     });
-                                    return false; 
+
+                                    if (!thresholdAlert.isConfirmed) {
+                                        return false; // Kasir membatalkan
+                                    }
                                 }
-                            } else {
-                                Swal.fire('Error Server!', 'Terjadi kesalahan pada Controller. Cek Laravel Log.', 'error');
-                                return false;
                             }
                         }
+
+                        // -------------------------------------------------------------
+                        // STEP 3: Pengecekan Profil PEP (Politically Exposed Person)
+                        // -------------------------------------------------------------
+                        const pepKeywords = ['pns', 'pejabat', 'tni', 'polri', 'dpr', 'dprd', 'bumn', 'pemerintah', 'menteri', 'bupati', 'walikota', 'gubernur', 'jaksa', 'hakim'];
+                        let isPep = pepKeywords.some(keyword => pekerjaan.toLowerCase().includes(keyword));
+
+                        if (isPep) {
+                            Swal.close(); // Tutup loading jika aktif
+                            
+                            let pepAlert = await Swal.fire({
+                                icon: 'info',
+                                title: 'Peringatan Profil PEP (High Risk)',
+                                html: `
+                                    <div class="text-left text-xs space-y-2">
+                                        <p class="text-blue-600 font-bold">Pekerjaan nasabah ("${pekerjaan.toUpperCase()}") terindikasi sebagai PEP / High Risk Profile.</p>
+                                        <hr>
+                                        <p class="text-gray-700">Pastikan kolom <b>Sumber Dana</b> dan <b>Tujuan Transaksi</b> telah terisi dengan jelas sesuai prosedur EDD.</p>
+                                    </div>
+                                `,
+                                showCancelButton: true,
+                                confirmButtonText: 'Lanjutkan Transaksi',
+                                cancelButtonText: 'Cek Kembali Form',
+                                confirmButtonColor: '#0284c7',
+                                cancelButtonColor: '#6b7280',
+                                allowOutsideClick: false
+                            });
+
+                            if (!pepAlert.isConfirmed) {
+                                return false; // Kasir memilih kembali untuk cek form
+                            }
+                        }
+
                     } catch(err) {
                         console.error('Gagal saat validasi ke server:', err);
-                        Swal.fire('Error Koneksi', 'Gagal menghubungi server.', 'error');
+                        Swal.fire('Error Koneksi', 'Gagal menghubungi server untuk verifikasi compliance.', 'error');
                         return false;
                     }
 
-                    // TAHAP AKHIR: JIKA AMAN
+                    // -------------------------------------------------------------
+                    // STEP 4: SUBMIT FORM (Bersihkan Format Ribuan Sebelum Dikirim)
+                    // -------------------------------------------------------------
                     let inputs = form.querySelectorAll('input[name*="amount_foreign"]');
                     inputs.forEach(input => {
                         input.value = parseNumber(input.value); 
                     });
                     
                     Swal.close(); 
-                    form.submit(); 
+                    form.submit(); // Kirim ke TransactionController@store
                 });
             }
         });

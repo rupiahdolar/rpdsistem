@@ -140,6 +140,22 @@ class TransactionController extends Controller
         // [FIX TIMEZONE] Paksa waktu server jadi WITA
         date_default_timezone_set('Asia/Makassar');
 
+        // Sanitize input amount_foreign jika masih membawa string titik/koma dari JS
+        if ($request->has('items') && is_array($request->items)) {
+            $items = $request->items;
+            foreach ($items as $key => $item) {
+                // Bersihkan amount_foreign
+                if (isset($item['amount_foreign'])) {
+                    $items[$key]['amount_foreign'] = preg_replace('/[^0-9.]/', '', str_replace(',', '.', $item['amount_foreign']));
+                }
+                // Bersihkan rate (Ubah koma jadi titik desimal)
+                if (isset($item['rate'])) {
+                    $items[$key]['rate'] = preg_replace('/[^0-9.]/', '', str_replace(',', '.', $item['rate']));
+                }
+            }
+            $request->merge(['items' => $items]);
+        }
+
         // 1. VALIDASI INPUT
         $rules = [
             'items' => 'required|array|min:1',
@@ -152,14 +168,15 @@ class TransactionController extends Controller
             'customer_identity_no' => 'required|string',
             'customer_id_type' => 'required|string',
             'customer_phone' => 'nullable|string',
+            'customer_job' => 'required|string', // <-- PENYESUAIAN: Wajib untuk Deteksi PEP
             
             'customer_type' => 'required|in:INDIVIDUAL,CORPORATE',
             'customer_dob'  => 'nullable|date', 
             
             'source_of_funds' => 'required|string',
-            'source_of_funds_custom' => 'required_if:source_of_funds,LAINNYA|nullable|string', // <-- TAMBAHAN VALIDASI
+            'source_of_funds_custom' => 'required_if:source_of_funds,LAINNYA|nullable|string',
             'transaction_purpose' => 'required|string',
-            'transaction_purpose_custom' => 'required_if:transaction_purpose,LAINNYA|nullable|string', // <-- TAMBAHAN VALIDASI
+            'transaction_purpose_custom' => 'required_if:transaction_purpose,LAINNYA|nullable|string',
             'payment_method' => 'required|in:CASH,TRANSFER',
             'bank_account_id' => 'required_if:payment_method,TRANSFER',
         ];
@@ -206,7 +223,7 @@ class TransactionController extends Controller
                     ])->withInput();
                 }
 
-                // B. WARNING POPUP (Jika Kemiripan Nama >= 75% tapi belum pasti)
+                // B. WARNING POPUP (Jika Kemiripan Nama >= 85% tapi belum pasti)
                 if ($dttotCheck['is_warning']) {
                     return back()->with('dttot_warning', [
                         'name'        => $cleanName,
@@ -221,69 +238,64 @@ class TransactionController extends Controller
             }
         }
 
-        // 3. GENERATE NO NOTA
+        // 3. DETEKSI PEP (POLITICALLY EXPOSED PERSON) UNTUK RECORD DATABASE
+        $pepKeywords = ['PNS', 'PEJABAT', 'TNI', 'POLRI', 'DPR', 'DPRD', 'BUMN', 'PEMERINTAH', 'MENTERI', 'BUPATI', 'WALIKOTA', 'GUBERNUR', 'JAKSA', 'HAKIM'];
+        $cleanJob = strtoupper(trim($request->customer_job));
+        $isPep = 0;
+        foreach ($pepKeywords as $keyword) {
+            if (strpos($cleanJob, $keyword) !== false) {
+                $isPep = 1;
+                break;
+            }
+        }
+
+        // 4. GENERATE NO NOTA
         $noNota = $request->no_nota ? strtoupper($request->no_nota) : 'INV-' . strtoupper(Str::random(6));
 
-        // [FIX TANGGAL & JAM] 
+        // FIX TANGGAL & JAM
         $customDate = $request->transaction_date 
             ? $request->transaction_date . ' ' . date('H:i:s') 
             : date('Y-m-d H:i:s');
 
         DB::beginTransaction();
         try {
-            // ============================================================
-            // [UPDATE UTAMA: LOGIKA ANTI NYASAR]
-            // ============================================================
-            
-            // 1. Cari Shift Kasir yang BENAR-BENAR SEDANG OPEN di Database saat ini
+            // Cari Shift Kasir yang BENAR-BENAR SEDANG OPEN
             $activeShift = Shift::where('user_id', Auth::id())
                             ->where('branch_id', session('branch_id')) 
                             ->where('status', 'open')
                             ->latest('id')
                             ->first();
 
-            // 2. Cegah Error jika Shift belum dibuka atau sesi habis
             if (!$activeShift) {
                 return back()->with('error', 'ERROR: Shift Belum Dibuka! Silakan kembali ke Dashboard dan klik "Open Shift".');
             }
 
-            // 3. PAKSA gunakan ID Shift yang aktif ini (Apapun tanggal inputannya)
             $shiftId = $activeShift->id;
             $branchId = $activeShift->branch_id; 
-            
-            // ============================================================
-            // [AKHIR UPDATE]
-            // ============================================================
-
             $userId = Auth::id();
             $totalIDRAll = 0;
 
-            // ============================================================
-            // [BARU] LOGIKA CHECK THRESHOLD APU-PPT (USD 10.000 / Rp 150 JUTA)
-            // ============================================================
+            // LOGIKA CHECK THRESHOLD APU-PPT (USD 10.000 / LTKT)
             $inputCustomerIdentity = strtoupper(trim($request->customer_identity_no));
             
-            // Hitung total rupiah seluruh item dalam transaksi yang sedang diinput ini
             $currentTransactionTotalIDR = 0;
             foreach ($request->items as $item) {
                 $currentTransactionTotalIDR += ($item['amount_foreign'] * $item['rate']);
             }
 
-            // Cek status akumulasi bulanan nasabah
+            // Cek status akumulasi bulanan nasabah via ComplianceService
             $compliance = $complianceService->checkThresholdStatus($inputCustomerIdentity, $currentTransactionTotalIDR);
             $isLtktTransaction = $compliance['is_exceeded'] ? 1 : 0;
-            // ============================================================
 
             foreach ($request->items as $item) {
                 $totalIDR = $item['amount_foreign'] * $item['rate'];
                 $totalIDRAll += $totalIDR;
 
-                // Generate TRX Code unik
                 do { $trxCode = 'TRX-' . strtoupper(Str::random(6)); } 
                 while (Transaction::where('transaction_code', $trxCode)->exists());
 
                 // SIMPAN KE DATABASE
-                $transaction = Transaction::create([
+                $transactionData = [
                     'transaction_code' => $trxCode,
                     'branch_id' => $branchId, 
                     'user_id' => $userId,
@@ -293,7 +305,7 @@ class TransactionController extends Controller
                     'amount_foreign' => $item['amount_foreign'],
                     'rate' => $item['rate'],
                     'total_idr' => $totalIDR,
-                    'is_ltkt' => $isLtktTransaction, // <-- TAMBAHKAN BARIS INI
+                    'is_ltkt' => $isLtktTransaction,
                     'no_nota' => $noNota,
                     
                     // --- DATA NASABAH ---
@@ -311,21 +323,27 @@ class TransactionController extends Controller
                     'representative_id_no' => $request->customer_type == 'CORPORATE' ? strtoupper($request->representative_id_no) : null,
 
                     'customer_address' => strtoupper($request->customer_address),
-                    'customer_job' => strtoupper($request->customer_job),
+                    'customer_job' => $cleanJob,
                     'customer_country' => strtoupper($request->customer_country),
                     'source_of_funds' => strtoupper($finalSourceOfFunds),
                     'transaction_purpose' => strtoupper($finalTransactionPurpose),
                     
                     'payment_method' => $request->payment_method,
                     'bank_account_id' => ($request->payment_method == 'TRANSFER') ? $request->bank_account_id : null,
-                ]);
+                ];
 
-                // [FIX FINAL] UPDATE TANGGAL SECARA PAKSA (HARD UPDATE)
+                // Jika di tabel transactions ada kolom is_pep, tambahkan nilainya
+                if (\Schema::hasColumn('transactions', 'is_pep')) {
+                    $transactionData['is_pep'] = $isPep;
+                }
+
+                $transaction = Transaction::create($transactionData);
+
+                // UPDATE TANGGAL SECARA PAKSA (HARD UPDATE)
                 DB::table('transactions')
                     ->where('id', $transaction->id)
                     ->update(['created_at' => $customDate]);
 
-                // Refresh object transaction agar service akuntansi mendapat tanggal yang benar
                 $transaction = Transaction::find($transaction->id);
 
                 AccountingService::recordTransaction($transaction);
