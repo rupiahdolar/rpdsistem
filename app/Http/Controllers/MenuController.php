@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Transaction;
+use App\Models\DeletedTransaction;
 use App\Models\Branch;
 use App\Models\User;
 use App\Models\Currency;       
@@ -96,14 +97,19 @@ class MenuController extends Controller
         $transactions = $query->paginate(20)->withQueryString();
         
         $branches = Branch::select('id', 'name')->get();
-        $activeCashiers = [];
+       $activeCashiers = [];
         if ($user->role === 'owner' || $user->role === 'admin') {
             $activeCashiers = User::where('role', '!=', 'owner')->select('id', 'name')->get();
         }
 
+        // --- SISIPKAN BARIS INI UNTUK MENGAMBIL DATA RIWAYAT HAPUS ---
+        $deletedTransactions = DeletedTransaction::orderBy('created_at', 'desc')
+                                ->paginate(10, ['*'], 'deleted_page');
+
         return view('admin.customers.index', compact(
             'transactions', 'branches', 'activeCashiers',
-            'startDate', 'endDate', 'search', 'sort', 'branchId', 'userId'
+            'startDate', 'endDate', 'search', 'sort', 'branchId', 'userId',
+            'deletedTransactions'
         ));
     }
 
@@ -235,37 +241,75 @@ class MenuController extends Controller
      * 4. HAPUS DATA
      */
     public function destroy($id)
-    {
-        if (auth()->user()->role !== 'owner') {
-             return back()->with('error', 'Akses Ditolak.');
-        }
-        $transaction = Transaction::findOrFail($id);
-        AccountingService::deleteTransactionJournal($transaction->transaction_code);
-        $transaction->delete();
-        return back()->with('success', 'Data dihapus permanen.');
+{
+    $trx = Transaction::findOrFail($id);
+    $user = auth()->user();
+
+    // 1. Jika Role Admin atau Kasir -> Catat ke Riwayat Penghapusan
+    if ($user->role !== 'owner') {
+        DeletedTransaction::create([
+            'no_nota'              => $trx->no_nota,
+            'transaction_code'     => $trx->transaction_code,
+            'customer_name'        => $trx->customer_name,
+            'customer_identity_no' => $trx->customer_identity_no,
+            'currency'             => $trx->currency,
+            'amount_foreign'       => $trx->amount_foreign,
+            'rate'                 => $trx->rate,
+            'total_idr'            => $trx->total_idr,
+            'type'                 => $trx->type,
+            'deleted_by_name'      => $user->name,
+            'deleted_by_role'      => $user->role,
+            'deletion_type'        => 'ITEM',
+            'transaction_date'     => $trx->created_at,
+        ]);
     }
+
+    // 2. Hapus Jurnal & Data Transaksi Asli
+    AccountingService::deleteTransactionJournal($trx->transaction_code);
+    $trx->delete();
+
+    return back()->with('success', 'Data item transaksi berhasil dihapus.');
+}
+
+    /**
+     * Hapus Seluruh Item dalam Satu Nota
+     */
     public function destroyNota($id)
     {
-        if (auth()->user()->role !== 'owner') {
-             return back()->with('error', 'Akses Ditolak.');
-        }
+        $trxTarget = Transaction::findOrFail($id);
+        $allTrxInNota = Transaction::where('no_nota', $trxTarget->no_nota)->get();
+        $user = auth()->user();
 
-        // Ambil transaksi pemicu untuk tahu No. Nota-nya
-        $trigger = Transaction::findOrFail($id);
-        $nota = $trigger->no_nota;
-        
-        // Ambil semua teman-temannya
-        $transactions = Transaction::where('no_nota', $nota)->get();
-        
         DB::beginTransaction();
         try {
-            foreach ($transactions as $trx) {
-                // Hapus Jurnal & Data
+            foreach ($allTrxInNota as $trx) {
+                // 1. Jika Role Admin atau Kasir -> Catat ke Riwayat Penghapusan
+                if ($user->role !== 'owner') {
+                    DeletedTransaction::create([
+                        'no_nota'              => $trx->no_nota,
+                        'transaction_code'     => $trx->transaction_code,
+                        'customer_name'        => $trx->customer_name,
+                        'customer_identity_no' => $trx->customer_identity_no,
+                        'currency'             => $trx->currency,
+                        'amount_foreign'       => $trx->amount_foreign,
+                        'rate'                 => $trx->rate,
+                        'total_idr'            => $trx->total_idr,
+                        'type'                 => $trx->type,
+                        'deleted_by_name'      => $user->name,
+                        'deleted_by_role'      => $user->role,
+                        'deletion_type'        => 'FULL_NOTA',
+                        'transaction_date'     => $trx->created_at,
+                    ]);
+                }
+
+                // 2. Hapus Jurnal & Transaksi
                 AccountingService::deleteTransactionJournal($trx->transaction_code);
                 $trx->delete();
             }
+
             DB::commit();
-            return back()->with('success', "Seluruh transaksi pada Nota $nota berhasil dihapus.");
+            return back()->with('success', 'Seluruh transaksi pada Nota ' . $trxTarget->no_nota . ' berhasil dihapus.');
+
         } catch (\Exception $e) {
             DB::rollBack();
             return back()->with('error', 'Gagal menghapus nota: ' . $e->getMessage());
@@ -277,9 +321,8 @@ class MenuController extends Controller
      */
     private function processExport($query, $type)
     {
-        // PDF tetap dibatasi, karena rendering view PDF itu berat di memori
+        // PDF tetap dibatasi
         if ($type == 'pdf') {
-            // LIMIT PDF MAX 500 Data agar tidak time out
             $data = $query->orderBy('created_at', 'desc')->limit(500)->get(); 
             return view('admin.customers.print_nasabah', compact('data'));
         }
@@ -287,49 +330,74 @@ class MenuController extends Controller
         if ($type == 'excel') {
             $fileName = 'Data_Nasabah_' . date('d-m-Y_His') . '.csv';
             $headers = [
-                "Content-type" => "text/csv",
+                "Content-type"        => "text/csv; charset=UTF-8",
                 "Content-Disposition" => "attachment; filename=$fileName",
-                "Pragma" => "no-cache",
-                "Cache-Control" => "must-revalidate, post-check=0, pre-check=0",
-                "Expires" => "0"
+                "Pragma"              => "no-cache",
+                "Cache-Control"       => "must-revalidate, post-check=0, pre-check=0",
+                "Expires"             => "0"
             ];
 
+            // --- HEADER DISAMAKAN 100% DENGAN ATURAN IMPORT ---
             $columns = [
-                'Tanggal', 'Jam', 'No Nota', 'Tipe Nasabah', 'Nama Nasabah/Korporasi', 'Nama Pengurus (PIC)',
-                'Tipe ID', 'No ID', 'Gender', 'Tgl Lahir/Pendirian', 'Alamat', 'Pekerjaan', 'Negara', 
-                'Sumber Dana', 'Tujuan', 'Tipe', 'Valas', 'Jumlah', 'Rate', 'Total IDR', 'Kasir'
+                'no_nota',
+                'tanggal',
+                'tipe_transaksi',
+                'mata_uang',
+                'jumlah_valas',
+                'rate',
+                'nama_nasabah',
+                'tipe_nasabah',
+                'tipe_id',
+                'no_id',
+                'jenis_kelamin',
+                'tgl_lahir',
+                'telepon',
+                'alamat',
+                'pekerjaan',
+                'negara',
+                'sumber_dana',
+                'tujuan_transaksi'
             ];
 
             // Streaming Data (Cursor)
             $callback = function() use($query, $columns) {
                 $file = fopen('php://output', 'w');
+                
+                // Tambahkan BOM agar karakter terbaca rapi di Excel
+                fputs($file, "\xEF\xBB\xBF");
                 fputcsv($file, $columns);
 
-                // Cursor mengambil data satu per satu dari Database
-                // Tidak ada penumpukan di RAM server (Hemat Memori)
                 foreach ($query->orderBy('created_at', 'desc')->cursor() as $row) {
+                    // Conversi Nilai Tipe Transaksi
+                    $tipeTransaksi = in_array(strtoupper($row->type), ['BUY', 'BELI']) ? 'BELI' : 'JUAL';
+
+                    // Conversi Nilai Tipe Nasabah
+                    $tipeNasabah = strtoupper($row->customer_type ?? 'INDIVIDUAL');
+                    if ($tipeNasabah === 'PERORANGAN') {
+                        $tipeNasabah = 'INDIVIDUAL';
+                    } elseif ($tipeNasabah === 'KORPORASI') {
+                        $tipeNasabah = 'CORPORATE';
+                    }
+
                     fputcsv($file, [
-                        $row->created_at->format('d/m/Y'),
-                        $row->created_at->format('H:i'),
                         $row->no_nota,
-                        $row->customer_type == 'CORPORATE' ? 'KORPORASI' : 'PERORANGAN',
-                        $row->customer_name,
-                        $row->representative_name ?? '-',
-                        $row->customer_id_type,
-                        "'".$row->customer_identity_no,
-                        $row->customer_gender,
-                        $row->customer_dob,
-                        $row->customer_address,
-                        $row->customer_job,
-                        $row->customer_country,
-                        $row->source_of_funds,
-                        $row->transaction_purpose,
-                        strtoupper($row->type),
-                        $row->currency,
+                        $row->created_at ? $row->created_at->format('Y-m-d') : '',
+                        $tipeTransaksi,
+                        strtoupper($row->currency),
                         $row->amount_foreign,
                         $row->rate,
-                        $row->total_idr,
-                        $row->user->name ?? '-'
+                        strtoupper($row->customer_name),
+                        $tipeNasabah,
+                        strtoupper($row->customer_id_type ?? 'KTP'),
+                        $row->customer_identity_no,
+                        $row->customer_gender,
+                        $row->customer_dob,
+                        $row->customer_phone ?? null,
+                        $row->customer_address,
+                        $row->customer_job,
+                        strtoupper($row->customer_country ?? 'INDONESIA'),
+                        $row->source_of_funds,
+                        $row->transaction_purpose
                     ]);
                 }
                 fclose($file);

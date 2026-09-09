@@ -62,6 +62,7 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/nasabah/kyc/threshold-rate', [MenuController::class, 'updateThresholdRate'])->name('nasabah.kyc.threshold-rate');
     Route::get('/nasabah/assessment', [AssessmentController::class, 'index'])->name('nasabah.assessment');
     Route::get('/nasabah/edit/{id}', [MenuController::class, 'edit'])->name('nasabah.edit');
+    Route::post('/nasabah/import', [TransactionController::class, 'importExcel'])->name('nasabah.import');
     Route::put('/nasabah/update/{id}', [MenuController::class, 'update'])->name('nasabah.update');
     Route::get('/nasabah/{id}/print', [App\Http\Controllers\MenuController::class, 'printStruk'])->name('nasabah.print');
     Route::delete('/nasabah-transaction/{id}', [MenuController::class, 'destroy'])->name('nasabah.destroy');

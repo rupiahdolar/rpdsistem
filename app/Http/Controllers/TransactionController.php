@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Transaction;
+use App\Imports\TransactionsImport;
+use Maatwebsite\Excel\Facades\Excel;
 use App\Models\Currency;
 use App\Models\Shift;          
 use App\Models\DttotList;
@@ -475,5 +477,24 @@ class TransactionController extends Controller
             'is_warning' => $warningMatches->count() > 0 && !$isExactMatch,
             'matches'    => $warningMatches
         ];
+    }
+
+    public function importExcel(Request $request)
+    {
+        $request->validate([
+            'file_excel' => 'required|mimes:xlsx,xls,csv|max:10240', // Maks 10MB
+            'branch_id'  => 'required|exists:branches,id'
+        ]);
+
+        try {
+            $branchId = $request->branch_id;
+            $userId   = auth()->id();
+
+            Excel::import(new \App\Imports\TransactionsImport($branchId, $userId), $request->file('file_excel'));
+
+            return back()->with('success', 'Berhasil mengimpor data transaksi & nasabah lama dari Excel!');
+        } catch (\Exception $e) {
+            return back()->with('error', 'Gagal mengimpor data: ' . $e->getMessage());
+        }
     }
 }

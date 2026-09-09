@@ -17,15 +17,55 @@
                 Data Transaksi Nasabah
             </h2>
 
-            <div class="flex gap-2">
-                <a href="{{ request()->fullUrlWithQuery(['export' => 'excel']) }}" class="bg-green-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-green-700 transition flex items-center gap-2 shadow-sm">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                    Excel
-                </a>
-                <a href="{{ request()->fullUrlWithQuery(['export' => 'pdf']) }}" target="_blank" class="bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-red-700 transition flex items-center gap-2 shadow-sm">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
-                    PDF
-                </a>
+            <div x-data="{ importModalOpen: false }" class="flex gap-2">
+                {{-- Tombol Import --}}
+                <button @click="importModalOpen = true" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-blue-700 transition flex items-center gap-2 shadow-sm">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                    Import Excel
+                </button>
+
+                <div class="flex gap-2">
+                    <a href="{{ request()->fullUrlWithQuery(['export' => 'excel']) }}" class="bg-green-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-green-700 transition flex items-center gap-2 shadow-sm">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                        Excel
+                    </a>
+                    <a href="{{ request()->fullUrlWithQuery(['export' => 'pdf']) }}" target="_blank" class="bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-red-700 transition flex items-center gap-2 shadow-sm">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                        PDF
+                    </a>
+                </div>
+
+                {{-- MODAL IMPORT EXCEL --}}
+                <div x-show="importModalOpen" class="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 backdrop-blur-sm" style="display: none;">
+                    <div class="bg-white rounded-xl shadow-xl p-6 max-w-md w-full" @click.away="importModalOpen = false">
+                        <h3 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                            Import Data Transaksi Lama
+                        </h3>
+                        
+                        <form action="{{ route('nasabah.import') }}" method="POST" enctype="multipart/form-data" class="space-y-4">
+                            @csrf
+                            
+                            <div>
+                                <label class="block text-xs font-bold text-gray-600 uppercase mb-1">Pilih Cabang Target</label>
+                                <select name="branch_id" class="w-full border-gray-300 rounded-lg text-xs font-bold h-10" required>
+                                    @foreach($branches as $b)
+                                        <option value="{{ $b->id }}">{{ $b->name }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+
+                            <div>
+                                <label class="block text-xs font-bold text-gray-600 uppercase mb-1">File Excel (.xlsx / .csv)</label>
+                                <input type="file" name="file_excel" accept=".xlsx, .xls, .csv" class="w-full border border-gray-300 rounded-lg p-2 text-xs" required>
+                            </div>
+
+                            <div class="flex justify-end gap-2 pt-4 border-t">
+                                <button type="button" @click="importModalOpen = false" class="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-xs font-bold">Batal</button>
+                                <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700">Mulai Import</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -180,26 +220,21 @@
                                 <a href="{{ route('nasabah.print', $trx->id) }}" target="_blank" class="text-blue-500 hover:text-blue-700 bg-blue-50 p-1.5 rounded transition border border-blue-200" title="Print Struk">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
                                 </a>
+  
+                                 {{-- Tombol Edit --}}
+                                <a href="{{ route('nasabah.edit', $trx->id) }}" class="text-yellow-500 hover:text-yellow-700 bg-yellow-50 p-1.5 rounded transition border border-yellow-200" title="Edit Seluruh Nota">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                                </a>
 
-                                @if(auth()->user()->role === 'owner')
-                                    
-                                    {{-- Tombol Edit --}}
-                                    <a href="{{ route('nasabah.edit', $trx->id) }}" class="text-yellow-500 hover:text-yellow-700 bg-yellow-50 p-1.5 rounded transition border border-yellow-200" title="Edit Seluruh Nota">
-                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
-                                    </a>
-
-                                    {{-- Tombol Hapus (Trigger Modal) --}}
-                                    <button @click="deleteModalOpen = true; 
-                                                    deleteItemUrl = '{{ route('nasabah.destroy', $trx->id) }}'; 
-                                                    deleteNotaUrl = '{{ route('nasabah.destroy_nota', $trx->id) }}'; 
-                                                    deleteNota = '{{ $trx->no_nota }}'" 
-                                            class="text-red-500 hover:text-red-700 bg-red-50 p-1.5 rounded transition border border-red-200" 
-                                            title="Hapus Data">
-                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                                    </button>
-                                
-                                @endif
-
+                                {{-- Tombol Hapus --}}
+                                <button @click="deleteModalOpen = true; 
+                                                deleteItemUrl = '{{ route('nasabah.destroy', $trx->id) }}'; 
+                                                deleteNotaUrl = '{{ route('nasabah.destroy_nota', $trx->id) }}'; 
+                                                deleteNota = '{{ $trx->no_nota }}'" 
+                                        class="text-red-500 hover:text-red-700 bg-red-50 p-1.5 rounded transition border border-red-200" 
+                                        title="Hapus Data">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                </button>
                             </div>
                         </td>
                     </tr>
@@ -263,6 +298,81 @@
             </div>
         </div>
     </div>
+{{-- TABEL RIWAYAT PENGHAPUSAN (KHUSUS ADMIN & KASIR) --}}
+    <div class="mt-10 bg-white rounded-xl shadow-sm border border-red-200 overflow-hidden">
+        <div class="bg-red-50 p-4 border-b border-red-100 flex justify-between items-center">
+            <div>
+                <h3 class="font-bold text-red-800 text-sm flex items-center gap-2">
+                    <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    Riwayat Penghapusan Transaksi (Admin & Kasir)
+                </h3>
+                <p class="text-[11px] text-red-600 mt-0.5">Mencatat seluruh transaksi yang dihapus oleh Admin/Kasir. Penghapusan oleh Owner tidak dicatat.</p>
+            </div>
+            <span class="bg-red-200 text-red-800 text-xs font-bold px-2.5 py-1 rounded-full">
+                {{ $deletedTransactions->total() }} Riwayat
+            </span>
+        </div>
 
-</div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-xs text-left whitespace-nowrap">
+                <thead class="bg-gray-100 text-gray-700 uppercase text-[10px] font-bold">
+                    <tr>
+                        <th class="px-4 py-3">Waktu Hapus</th>
+                        <th class="px-4 py-3">Dihapus Oleh</th>
+                        <th class="px-4 py-3">Tipe Hapus</th>
+                        <th class="px-4 py-3">No. Nota</th>
+                        <th class="px-4 py-3">Nama Nasabah</th>
+                        <th class="px-4 py-3 text-center">Tipe</th>
+                        <th class="px-4 py-3 text-center">Valas</th>
+                        <th class="px-4 py-3 text-right">Jumlah</th>
+                        <th class="px-4 py-3 text-right">Rate</th>
+                        <th class="px-4 py-3 text-right">Total (IDR)</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 text-gray-600">
+                    @forelse($deletedTransactions as $log)
+                    <tr class="hover:bg-red-50/50 transition">
+                        <td class="px-4 py-3 font-mono text-gray-700">
+                            {{ $log->created_at->format('d/m/Y H:i') }}
+                        </td>
+                        <td class="px-4 py-3 font-bold text-gray-800">
+                            {{ $log->deleted_by_name }} 
+                            <span class="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded {{ $log->deleted_by_role == 'admin' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700' }}">
+                                {{ $log->deleted_by_role }}
+                            </span>
+                        </td>
+                        <td class="px-4 py-3">
+                            <span class="px-2 py-0.5 rounded text-[9px] font-bold {{ $log->deletion_type == 'FULL_NOTA' ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-gray-100 text-gray-700' }}">
+                                {{ $log->deletion_type == 'FULL_NOTA' ? 'SATU NOTA' : 'ITEM SAJA' }}
+                            </span>
+                        </td>
+                        <td class="px-4 py-3 font-mono font-bold text-gray-800">{{ $log->no_nota }}</td>
+                        <td class="px-4 py-3 uppercase font-bold text-gray-700">{{ $log->customer_name }}</td>
+                        <td class="px-4 py-3 text-center">
+                            <span class="px-1.5 py-0.5 rounded text-[9px] font-bold {{ $log->type == 'buy' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700' }}">
+                                {{ strtoupper($log->type) }}
+                            </span>
+                        </td>
+                        <td class="px-4 py-3 text-center font-bold text-gray-800">{{ $log->currency }}</td>
+                        <td class="px-4 py-3 text-right font-mono">{{ number_format($log->amount_foreign, 2) }}</td>
+                        <td class="px-4 py-3 text-right font-mono">{{ number_format($log->rate) }}</td>
+                        <td class="px-4 py-3 text-right font-bold font-mono text-red-600">Rp {{ number_format($log->total_idr) }}</td>
+                    </tr>
+                    @empty
+                    <tr>
+                        <td colspan="10" class="p-6 text-center text-gray-400 bg-gray-50">
+                            Belum ada riwayat penghapusan transaksi oleh Admin atau Kasir.
+                        </td>
+                    </tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+
+        @if($deletedTransactions->hasPages())
+        <div class="bg-gray-50 p-3 border-t border-gray-100">
+            {{ $deletedTransactions->links() }}
+        </div>
+        @endif
+    </div>
 @endsection
