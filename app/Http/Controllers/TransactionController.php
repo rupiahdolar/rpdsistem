@@ -16,6 +16,7 @@ use App\Services\ComplianceService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Carbon\Carbon;
 
 class TransactionController extends Controller
 {
@@ -514,5 +515,25 @@ class TransactionController extends Controller
         } catch (\Exception $e) {
             return back()->with('error', 'Gagal mengimpor data: ' . $e->getMessage());
         }
+    }
+     
+    public function checkNoNota(Request $request)
+    {
+        $noNota = $request->query('no_nota');
+        
+        if (!$noNota) {
+            return response()->json(['exists' => false]);
+        }
+
+        $exists = Transaction::where('no_nota', $noNota)->first();
+
+        if ($exists) {
+            return response()->json([
+                'exists' => true,
+                'date'   => Carbon::parse($exists->created_at)->format('d/m/Y H:i')
+            ]);
+        }
+
+        return response()->json(['exists' => false]);
     }
 }

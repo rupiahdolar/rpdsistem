@@ -209,7 +209,8 @@ Route::middleware(['auth'])->group(function () {
             Route::get('/search-customers', [TransactionController::class, 'searchCustomers'])->name('transaction.search.customers'); 
             Route::post('/store', [TransactionController::class, 'store'])->name('transaction.store');
             Route::post('/end-shift', [TransactionController::class, 'endShift'])->name('transaction.endShift'); 
-            Route::delete('/{id}', [TransactionController::class, 'destroy'])->name('transaction.destroy'); 
+            Route::delete('/{id}', [TransactionController::class, 'destroy'])->name('transaction.destroy');
+            Route::get('/transactions/check-nota', [TransactionController::class, 'checkNoNota'])->name('transaction.checkNota');
         });
         
     });

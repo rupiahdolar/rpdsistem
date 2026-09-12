@@ -417,12 +417,23 @@
                             No. Nota
                         </td>
                         <td class="p-3">
-                            <input type="text" name="no_nota" 
-                                value="{{ old('no_nota') }}" 
-                                oninput="this.value = this.value.toUpperCase()"
-                                class="w-full md:w-1/3 border-gray-300 rounded p-1.5 text-xs font-bold font-mono bg-yellow-50 uppercase focus:ring-primary focus:border-primary" 
-                                placeholder="AUTO (KOSONGKAN JIKA BARU)">
-                            <span class="text-[10px] text-gray-400 ml-2 italic">*Otomatis Kapital</span>
+                            <div class="flex flex-col md:flex-row md:items-center gap-2">
+                                <input type="text" 
+                                    id="inputNoNota"
+                                    name="no_nota" 
+                                    value="{{ old('no_nota') }}" 
+                                    oninput="this.value = this.value.toUpperCase(); checkNotaDuplicate(this.value);"
+                                    class="w-full md:w-1/3 border-gray-300 rounded p-1.5 text-xs font-bold font-mono bg-yellow-50 uppercase focus:ring-primary focus:border-primary" 
+                                    placeholder="AUTO (KOSONGKAN JIKA BARU)">
+                                <span class="text-[10px] text-gray-400 italic">*Otomatis Kapital</span>
+                            </div>
+                            {{-- Pesan Peringatan Duplikat --}}
+                            <div id="notaWarning" class="hidden text-xs font-bold text-red-600 mt-1 flex items-center gap-1">
+                                <svg class="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                                </svg>
+                                <span id="notaWarningText">⚠️ Nomor Nota sudah terdaftar di database!</span>
+                            </div>
                         </td>
                     </tr>
 
@@ -528,17 +539,15 @@
                         <td class="p-3">
                             <div class="grid grid-cols-2 gap-4">
                                 <div x-show="custType == 'INDIVIDUAL'" class="flex items-center gap-2 border-r border-gray-200 pr-4">
-                                    <span class="text-[10px] font-bold text-gray-400 uppercase">Gender:</span>
-                                    <div class="flex gap-3">
-                                        <label class="flex items-center gap-1 cursor-pointer">
-                                            <input type="radio" name="customer_gender" value="L" x-model="formData.gender" class="w-3 h-3 text-primary">
-                                            <span class="text-xs font-bold text-gray-700">PRIA</span>
-                                        </label>
-                                        <label class="flex items-center gap-1 cursor-pointer">
-                                            <input type="radio" name="customer_gender" value="P" x-model="formData.gender" class="w-3 h-3 text-primary">
-                                            <span class="text-xs font-bold text-gray-700">WANITA</span>
-                                        </label>
-                                    </div>
+                                    <span class="text-[10px] font-bold text-gray-500 uppercase">Jenis Kelamin <span class="text-red-500">*</span>:</span>
+                                    <select name="customer_gender" 
+                                            x-model="formData.gender" 
+                                            :required="custType == 'INDIVIDUAL'"
+                                            class="border-gray-300 rounded p-1.5 text-xs font-bold bg-white focus:ring-primary focus:border-primary w-full text-gray-700">
+                                        <option value="">- Pilih Jenis Kelamin -</option>
+                                        <option value="L">Laki-laki</option>
+                                        <option value="P">Perempuan</option>
+                                    </select>
                                 </div>
                                 
                                 <div class="flex items-center gap-2">
@@ -689,10 +698,11 @@
             </div>
             
             <div class="px-4 py-3 bg-yellow-50 border-b border-yellow-100 flex items-center">
-                <label class="text-xs font-bold text-gray-500 uppercase mr-2">JENIS TRANSAKSI</label>
-                <select id="globalType" onchange="updateAllRowsType()" class="border-gray-300 rounded p-1.5 text-sm font-bold w-48 focus:ring-primary focus:border-primary">
-                    <option value="buy" selected>BELI</option>
-                    <option value="sell">JUAL</option>
+                <label class="text-xs font-bold text-gray-700 uppercase mr-2">JENIS TRANSAKSI <span class="text-red-500">*</span></label>
+                <select id="globalType" onchange="updateAllRowsType()" class="border-gray-300 rounded p-1.5 text-xs font-bold w-52 focus:ring-primary focus:border-primary bg-white" required>
+                    <option value="">- Jenis Transaksi -</option>
+                    <option value="buy">Beli</option>
+                    <option value="sell">Jual</option>
                 </select>
             </div>
 
@@ -1041,6 +1051,38 @@
                 });
         }
 
+        let notaDebounceTimeout = null;
+        function checkNotaDuplicate(noNota) {
+            clearTimeout(notaDebounceTimeout);
+            const warningEl = document.getElementById('notaWarning');
+            const warningText = document.getElementById('notaWarningText');
+            const inputEl = document.getElementById('inputNoNota');
+
+            if (!noNota || noNota.trim().length === 0) {
+                warningEl.classList.add('hidden');
+                inputEl.classList.remove('border-red-500', 'bg-red-50');
+                inputEl.classList.add('bg-yellow-50');
+                return;
+            }
+
+            notaDebounceTimeout = setTimeout(() => {
+                fetch(`{{ route('transaction.checkNota') }}?no_nota=${encodeURIComponent(noNota.trim())}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.exists) {
+                            warningText.innerText = `⚠️ Peringatan: Nomor Nota "${noNota}" sudah pernah terdaftar di database (${data.date})!`;
+                            warningEl.classList.remove('hidden');
+                            inputEl.classList.remove('bg-yellow-50');
+                            inputEl.classList.add('border-red-500', 'bg-red-50');
+                        } else {
+                            warningEl.classList.add('hidden');
+                            inputEl.classList.remove('border-red-500', 'bg-red-50');
+                            inputEl.classList.add('bg-yellow-50');
+                        }
+                    })
+                    .catch(err => console.error('Gagal mengecek nomor nota:', err));
+            }, 400);
+        }
         // Init Single Listener
         // Init Single Listener
         document.addEventListener('DOMContentLoaded', function() {
@@ -1179,7 +1221,7 @@
                             });
 
                             if (!pepAlert.isConfirmed) {
-                                return false; // Kasir memilih kembali untuk cek form
+                                return false;
                             }
                         }
 
@@ -1189,16 +1231,13 @@
                         return false;
                     }
 
-                    // -------------------------------------------------------------
-                    // STEP 4: SUBMIT FORM (Bersihkan Format Ribuan Sebelum Dikirim)
-                    // -------------------------------------------------------------
                     let inputs = form.querySelectorAll('input[name*="amount_foreign"]');
                     inputs.forEach(input => {
                         input.value = parseNumber(input.value); 
                     });
                     
                     Swal.close(); 
-                    form.submit(); // Kirim ke TransactionController@store
+                    form.submit();
                 });
             }
         });
