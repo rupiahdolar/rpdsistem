@@ -118,7 +118,7 @@ class MenuController extends Controller
      */
     public function edit($id)
     {
-        if (auth()->user()->role !== 'owner') {
+        if (!in_array(auth()->user()->role, ['owner', 'admin', 'cashier'])) {
             return back()->with('error', 'Akses Ditolak.');
         }
 
@@ -143,7 +143,8 @@ class MenuController extends Controller
      */
     public function update(Request $request, $id)
     {
-        if (auth()->user()->role !== 'owner') {
+        // Mengizinkan Owner, Admin, dan Kasir untuk Update
+        if (!in_array(auth()->user()->role, ['owner', 'admin', 'cashier'])) {
             return back()->with('error', 'Akses Ditolak.');
         }
 

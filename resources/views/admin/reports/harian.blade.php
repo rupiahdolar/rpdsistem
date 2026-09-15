@@ -47,8 +47,8 @@
                     <input type="date" name="start_date" value="{{ request('start_date', $startDate ?? date('Y-m-d')) }}" class="border-gray-300 rounded-md text-xs font-bold text-gray-700 focus:ring-primary focus:border-primary bg-white shadow-sm cursor-pointer h-9 px-2">
                     <select name="start_shift" class="border-gray-300 rounded-md text-xs font-bold text-gray-700 focus:ring-primary focus:border-primary bg-white cursor-pointer h-9 px-2">
                         <option value="all" {{ request('start_shift', $startShift ?? 'all') == 'all' ? 'selected' : '' }}>Semua Shift</option>
-                        <option value="1" {{ request('start_shift', $startShift ?? 'all') == '1' ? 'selected' : '' }}>Shift 1 (00:00 - 11:59)</option>
-                        <option value="2" {{ request('start_shift', $startShift ?? 'all') == '2' ? 'selected' : '' }}>Shift 2 (12:00 - 23:59)</option>
+                        <option value="1" {{ request('start_shift', $startShift ?? 'all') == '1' ? 'selected' : '' }}>Shift 1 (00:00 - 14:59)</option>
+                        <option value="2" {{ request('start_shift', $startShift ?? 'all') == '2' ? 'selected' : '' }}>Shift 2 (15:00 - 23:59)</option>
                     </select>
                 </div>
 
@@ -58,8 +58,8 @@
                     <input type="date" name="end_date" value="{{ request('end_date', $endDate ?? date('Y-m-d')) }}" class="border-gray-300 rounded-md text-xs font-bold text-gray-700 focus:ring-primary focus:border-primary bg-white shadow-sm cursor-pointer h-9 px-2">
                     <select name="end_shift" class="border-gray-300 rounded-md text-xs font-bold text-gray-700 focus:ring-primary focus:border-primary bg-white cursor-pointer h-9 px-2">
                         <option value="all" {{ request('end_shift', $endShift ?? 'all') == 'all' ? 'selected' : '' }}>Semua Shift</option>
-                        <option value="1" {{ request('end_shift', $endShift ?? 'all') == '1' ? 'selected' : '' }}>Shift 1 (00:00 - 11:59)</option>
-                        <option value="2" {{ request('end_shift', $endShift ?? 'all') == '2' ? 'selected' : '' }}>Shift 2 (12:00 - 23:59)</option>
+                        <option value="1" {{ request('end_shift', $endShift ?? 'all') == '1' ? 'selected' : '' }}>Shift 1 (00:00 - 14:59)</option>
+                        <option value="2" {{ request('end_shift', $endShift ?? 'all') == '2' ? 'selected' : '' }}>Shift 2 (15:00 - 23:59)</option>
                     </select>
                 </div>
 

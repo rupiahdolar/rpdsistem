@@ -209,7 +209,7 @@
                         {{-- 14-17. Angka --}}
                         <td class="px-4 py-3 text-center font-bold text-gray-800">{{ $trx->currency }}</td>
                         <td class="px-4 py-3 text-right font-mono text-gray-700">{{ number_format($trx->amount_foreign, 2) }}</td>
-                        <td class="px-4 py-3 text-right font-mono text-gray-500">{{ number_format($trx->rate) }}</td>
+                        <td class="px-4 py-3 text-right font-mono text-gray-500">{{ $trx->rate == floor($trx->rate) ? number_format($trx->rate, 0, ',', '.') : number_format($trx->rate, 2, ',', '.') }}</td>
                         <td class="px-4 py-3 text-right font-bold text-primary font-mono bg-blue-50/30">Rp {{ number_format($trx->total_idr) }}</td>
 
                         {{-- 18. AKSI --}}
@@ -355,7 +355,7 @@
                         </td>
                         <td class="px-4 py-3 text-center font-bold text-gray-800">{{ $log->currency }}</td>
                         <td class="px-4 py-3 text-right font-mono">{{ number_format($log->amount_foreign, 2) }}</td>
-                        <td class="px-4 py-3 text-right font-mono">{{ number_format($log->rate) }}</td>
+                        <td class="px-4 py-3 text-right font-mono">{{ $log->rate == floor($log->rate) ? number_format($log->rate, 0, ',', '.') : number_format($log->rate, 2, ',', '.') }}</td>
                         <td class="px-4 py-3 text-right font-bold font-mono text-red-600">Rp {{ number_format($log->total_idr) }}</td>
                     </tr>
                     @empty

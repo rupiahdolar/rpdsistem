@@ -26,6 +26,7 @@ class CurrencySeeder extends Seeder
             ['code' => 'BND', 'name' => 'Dollar Brunei'],
             ['code' => 'SAR', 'name' => 'Riyal Arab Saudi'],
             ['code' => 'AED', 'name' => 'Dirham Uni Emirat Arab'],
+            ['code' => 'QTR', 'name' => 'Riyal Qatar'],
             ['code' => 'THB', 'name' => 'Baht Thailand'],
             ['code' => 'PHP', 'name' => 'Peso Filipina'],
             ['code' => 'SEK', 'name' => 'Krona Swedia'],

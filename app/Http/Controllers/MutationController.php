@@ -36,13 +36,13 @@ class MutationController extends Controller
         if ($startShift === 'all' || $startShift == 1) {
             $startTime = '00:00:00';
         } else {
-            $startTime = '12:00:00'; // Jika memilih Shift 2
+            $startTime = '15:00:00';
         }
 
         if ($endShift === 'all' || $endShift == 2) {
             $endTime = '23:59:59';
         } else {
-            $endTime = '11:59:59'; // Jika memilih Shift 1
+            $endTime = '14:59:59';
         }
 
         $startDatetime = $startDate . ' ' . $startTime;

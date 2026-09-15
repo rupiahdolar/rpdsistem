@@ -229,10 +229,10 @@
                         {{-- Rate --}}
                         <div class="md:col-span-3">
                             <label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Rate (Kurs)</label>
-                            <input type="number" step="1" 
-                                   name="items[{{ $index }}][rate]" 
-                                   x-model="rate"
-                                   class="w-full border-gray-300 rounded p-2 text-sm font-bold text-right" required>
+                            <input type="number" step="0.01" 
+                                name="items[{{ $index }}][rate]" 
+                                x-model="rate"
+                                class="w-full border-gray-300 rounded p-2 text-sm font-bold text-right" required>
                         </div>
 
                         {{-- Total Live Calculation --}}
