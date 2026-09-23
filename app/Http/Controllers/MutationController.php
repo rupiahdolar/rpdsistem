@@ -75,7 +75,7 @@ class MutationController extends Controller
 
         // --- 3. HITUNG SALDO AWAL (REAL FISIK) ---
         // Mengambil saldo awal di tanggal mulai ($startDate)
-        $startData = $this->getAccumulatedStart($startDate, $branchId);
+        $startData = $this->getAccumulatedStart($startDatetime, $branchId);
         $startCash = $startData['cash'];
         $checkpointStocks = $startData['stocks'];
         $checkpointDate = $startDate;
@@ -427,54 +427,102 @@ class MutationController extends Controller
      * Menggunakan SQL Sum untuk meringankan beban RAM.
      * Mencari modal awal terakhir dan mengakumulasi transaksi s/d Target Date.
      */
-    private function getAccumulatedStart($targetDate, $branchId) {
-        if ($branchId && $branchId != -1) { $branchIds = [$branchId]; } else { $branchIds = Branch::pluck('id')->toArray(); }
+    private function getAccumulatedStart($targetDatetime, $branchId) {
+        if ($branchId && $branchId != -1) { 
+            $branchIds = [$branchId]; 
+        } else { 
+            $branchIds = Branch::pluck('id')->toArray(); 
+        }
+        
         $allCurrencies = Currency::where('is_active', 1)->get();
-        $totalCash = 0; $totalStocks = []; 
+        $totalCash = 0; 
+        $totalStocks = []; 
+
+        // Ambil tanggal saja untuk pembanding modal awal (Initial Capital)
+        $targetDateOnly = Carbon::parse($targetDatetime)->format('Y-m-d');
 
         foreach ($branchIds as $bId) {
-            $lastCap = InitialCapital::where('branch_id', $bId)->whereDate('date', '<=', $targetDate)->orderBy('date', 'desc')->first();
+            $lastCap = InitialCapital::where('branch_id', $bId)
+                        ->whereDate('date', '<=', $targetDateOnly)
+                        ->orderBy('date', 'desc')
+                        ->first();
+                        
             $startCash = $lastCap ? $lastCap->amount : 0;
             $dateCash  = $lastCap ? $lastCap->date : '2000-01-01';
-            $capStocks = ($lastCap && $lastCap->forex_stocks) ? (is_string($lastCap->forex_stocks) ? json_decode($lastCap->forex_stocks, true) : $lastCap->forex_stocks) : [];
+            $capStocks = ($lastCap && $lastCap->forex_stocks) 
+                        ? (is_string($lastCap->forex_stocks) ? json_decode($lastCap->forex_stocks, true) : $lastCap->forex_stocks) 
+                        : [];
 
-            // OPTIMIZED SQL QUERY (SUM)
-            $cashIn = Transaction::where('branch_id', $bId)->where('created_at', '>=', $dateCash . ' 00:00:00')->where('created_at', '<', $targetDate . ' 00:00:00')->where('payment_method', 'CASH')->where('type', 'sell')->sum('total_idr');
-            $cashOut = Transaction::where('branch_id', $bId)->where('created_at', '>=', $dateCash . ' 00:00:00')->where('created_at', '<', $targetDate . ' 00:00:00')->where('payment_method', 'CASH')->where('type', 'buy')->sum('total_idr');
-            $expenses = Expense::where('branch_id', $bId)->where('date', '>=', $dateCash)->where('date', '<', $targetDate)->sum('amount');
-            $qMut = InternalMutation::where('branch_id', $bId)->where('transaction_date', '>=', $dateCash)->where('transaction_date', '<', $targetDate);
+            // --- OPTIMIZED SQL QUERY WITH DATETIME CUTOFF ---
+            // Hitung transaksi dari tanggal modal awal hingga JAM MULAI SHIFT ($targetDatetime)
+            $cashIn = Transaction::where('branch_id', $bId)
+                        ->where('created_at', '>=', $dateCash . ' 00:00:00')
+                        ->where('created_at', '<', $targetDatetime) // Gunakan $targetDatetime
+                        ->where('payment_method', 'CASH')
+                        ->where('type', 'sell')
+                        ->sum('total_idr');
+
+            $cashOut = Transaction::where('branch_id', $bId)
+                        ->where('created_at', '>=', $dateCash . ' 00:00:00')
+                        ->where('created_at', '<', $targetDatetime) // Gunakan $targetDatetime
+                        ->where('payment_method', 'CASH')
+                        ->where('type', 'buy')
+                        ->sum('total_idr');
+
+            $expenses = Expense::where('branch_id', $bId)
+                        ->where('date', '>=', $dateCash)
+                        ->where('date', '<', $targetDateOnly)
+                        ->sum('amount');
+
+            $qMut = InternalMutation::where('branch_id', $bId)
+                    ->where('transaction_date', '>=', $dateCash)
+                    ->where('transaction_date', '<', $targetDateOnly);
+                    
             $bankToCash = (clone $qMut)->where('type', 'bank_to_cash')->sum('amount');
             $cashToBank = (clone $qMut)->where('type', 'cash_to_bank')->sum('amount');
             
             $branchEndCash = $startCash + $cashIn - $cashOut - $expenses + $bankToCash - $cashToBank;
             $totalCash += $branchEndCash;
 
-            // Untuk Valas, tetap butuh loop karena Moving Average butuh urutan
+            // Akumulasi Stok Valas hingga $targetDatetime
             foreach ($allCurrencies as $curr) {
                 $code = $curr->code;
                 $sData = $capStocks[$code] ?? ['qty' => 0, 'rate' => 0];
                 $qty = $sData['qty'];
                 $avgRate = $sData['rate'];
                 
-                // Ambil gap transaksi
-                $trxGap = Transaction::where('branch_id', $bId)->where('currency', $code)->where('created_at', '>=', $dateCash . ' 00:00:00')->where('created_at', '<', $targetDate . ' 00:00:00')->orderBy('created_at')->get(); 
+                $trxGap = Transaction::where('branch_id', $bId)
+                            ->where('currency', $code)
+                            ->where('created_at', '>=', $dateCash . ' 00:00:00')
+                            ->where('created_at', '<', $targetDatetime) // Gunakan $targetDatetime
+                            ->orderBy('created_at')
+                            ->get(); 
                 
                 foreach ($trxGap as $t) {
                     if ($t->type == 'buy') {
-                        $valBefore = $qty * $avgRate; $valNew = $t->total_idr; $qty += $t->amount_foreign;
+                        $valBefore = $qty * $avgRate; 
+                        $valNew = $t->total_idr; 
+                        $qty += $t->amount_foreign;
                         if ($qty > 0) $avgRate = ($valBefore + $valNew) / $qty; else $avgRate = 0;
-                    } else { $qty -= $t->amount_foreign; }
+                    } else { 
+                        $qty -= $t->amount_foreign; 
+                    }
                 }
                 if (!isset($totalStocks[$code])) $totalStocks[$code] = ['qty'=>0, 'val'=>0];
-                $totalStocks[$code]['qty'] += $qty; $totalStocks[$code]['val'] += ($qty * $avgRate);
+                $totalStocks[$code]['qty'] += $qty; 
+                $totalStocks[$code]['val'] += ($qty * $avgRate);
             }
         }
         
         // Finalisasi Stok Gabungan
         $finalStocks = [];
         foreach ($totalStocks as $code => $dt) {
-            $finalStocks[$code] = ['qty' => $dt['qty'], 'rate' => ($dt['qty'] != 0) ? ($dt['val'] / $dt['qty']) : 0];
+            $finalStocks[$code] = [
+                'qty' => $dt['qty'], 
+                'rate' => ($dt['qty'] != 0) ? ($dt['val'] / $dt['qty']) : 0
+            ];
         }
+        
         return ['cash' => $totalCash, 'stocks' => $finalStocks];
     }
 }
