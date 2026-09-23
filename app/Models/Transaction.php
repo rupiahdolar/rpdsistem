@@ -25,7 +25,7 @@ class Transaction extends Model
         'customer_name',
         'customer_identity_no',
         'customer_id_type',
-        'customer_phone', // <-- TAMBAHKAN INI
+        'customer_phone',
         'customer_gender',      
         'customer_dob',         
         'customer_address',
@@ -49,6 +49,8 @@ class Transaction extends Model
         'total_idr',
         'payment_method',
         'bank_account_id',
+        'created_at',
+        'updated_at',
     ];
 
     /**

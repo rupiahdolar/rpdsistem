@@ -8,6 +8,7 @@ use Maatwebsite\Excel\Concerns\ToModel;
 use Maatwebsite\Excel\Concerns\WithHeadingRow;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
+use PhpOffice\PhpSpreadsheet\Shared\Date; // 1. TAMBAHKAN IMPORT INI
 
 class TransactionsImport implements ToModel, WithHeadingRow
 {
@@ -20,7 +21,6 @@ class TransactionsImport implements ToModel, WithHeadingRow
         $this->branchId = $branchId;
         $this->userId   = $userId;
 
-        // Cari atau buatkan Shift Khusus untuk penampung Import Data Lama
         $importShift = Shift::firstOrCreate(
             [
                 'user_id' => $userId,
@@ -41,38 +41,53 @@ class TransactionsImport implements ToModel, WithHeadingRow
 
     public function model(array $row): ?\Illuminate\Database\Eloquent\Model
     {
-        // Abaikan jika baris nama nasabah atau jumlah valas kosong
         if (empty($row['nama_nasabah']) || empty($row['jumlah_valas'])) {
             return null;
         }
 
-        // Generate Transaction Code Unik
         do {
             $trxCode = 'IMP-' . strtoupper(Str::random(6));
         } while (Transaction::where('transaction_code', $trxCode)->exists());
 
-        // Parse Tanggal Transaksi
+        // --- 2. PARSE TANGGAL TRANSAKSI DENGAN AMAN ---
         $transactionDate = now();
         if (!empty($row['tanggal'])) {
             try {
-                $transactionDate = Carbon::parse($row['tanggal'])->format('Y-m-d H:i:s');
+                if (is_numeric($row['tanggal'])) {
+                    // Jika format di Excel berupa Serial Date
+                    $transactionDate = Carbon::instance(Date::excelToDateTimeObject($row['tanggal']))->format('Y-m-d H:i:s');
+                } else {
+                    // Jika format di Excel berupa string biasa
+                    $transactionDate = Carbon::parse($row['tanggal'])->format('Y-m-d H:i:s');
+                }
             } catch (\Exception $e) {
                 $transactionDate = now();
             }
         }
 
-        // Conversi Tipe Transaksi (Beli/Jual)
+        // --- 3. PARSE TANGGAL LAHIR DENGAN AMAN ---
+        $customerDob = null;
+        if (!empty($row['tgl_lahir'])) {
+            try {
+                if (is_numeric($row['tgl_lahir'])) {
+                    $customerDob = Carbon::instance(Date::excelToDateTimeObject($row['tgl_lahir']))->format('Y-m-d');
+                } else {
+                    $customerDob = Carbon::parse($row['tgl_lahir'])->format('Y-m-d');
+                }
+            } catch (\Exception $e) {
+                $customerDob = null;
+            }
+        }
+
         $type = strtolower($row['tipe_transaksi'] ?? 'buy');
         if ($type === 'beli') $type = 'buy';
         if ($type === 'jual') $type = 'sell';
 
-        // Conversi Tipe Nasabah
         $customerType = strtoupper($row['tipe_nasabah'] ?? 'INDIVIDUAL');
         if (!in_array($customerType, ['INDIVIDUAL', 'CORPORATE'])) {
             $customerType = 'INDIVIDUAL';
         }
 
-        // Hitung Total IDR
         $amountForeign = (float) $row['jumlah_valas'];
         $rate = (float) $row['rate'];
         $totalIdr = $amountForeign * $rate;
@@ -91,7 +106,7 @@ class TransactionsImport implements ToModel, WithHeadingRow
             'customer_id_type'     => !empty($row['tipe_id']) ? strtoupper($row['tipe_id']) : 'KTP',
             'customer_phone'       => $row['telepon'] ?? null,
             'customer_gender'      => !empty($row['jenis_kelamin']) ? strtoupper($row['jenis_kelamin']) : null,
-            'customer_dob'         => !empty($row['tgl_lahir']) ? Carbon::parse($row['tgl_lahir'])->format('Y-m-d') : null,
+            'customer_dob'         => $customerDob,
             'customer_address'     => !empty($row['alamat']) ? strtoupper($row['alamat']) : null,
             'customer_job'         => !empty($row['pekerjaan']) ? strtoupper($row['pekerjaan']) : null,
             'customer_country'     => !empty($row['negara']) ? strtoupper($row['negara']) : 'INDONESIA',
