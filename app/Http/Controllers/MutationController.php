@@ -438,7 +438,7 @@ class MutationController extends Controller
         $totalCash = 0; 
         $totalStocks = []; 
 
-        // Ambil tanggal saja untuk pembanding modal awal (Initial Capital)
+        // Ambil tanggal dari datetime untuk mencari InitialCapital (Modal Awal)
         $targetDateOnly = Carbon::parse($targetDatetime)->format('Y-m-d');
 
         foreach ($branchIds as $bId) {
@@ -453,18 +453,17 @@ class MutationController extends Controller
                         ? (is_string($lastCap->forex_stocks) ? json_decode($lastCap->forex_stocks, true) : $lastCap->forex_stocks) 
                         : [];
 
-            // --- OPTIMIZED SQL QUERY WITH DATETIME CUTOFF ---
-            // Hitung transaksi dari tanggal modal awal hingga JAM MULAI SHIFT ($targetDatetime)
+            // --- QUERY DENGAN CUTOFF SESUAI DATETIME ($targetDatetime) ---
             $cashIn = Transaction::where('branch_id', $bId)
                         ->where('created_at', '>=', $dateCash . ' 00:00:00')
-                        ->where('created_at', '<', $targetDatetime) // Gunakan $targetDatetime
+                        ->where('created_at', '<', $targetDatetime) // Hitung persis sampai jam shift dimulai
                         ->where('payment_method', 'CASH')
                         ->where('type', 'sell')
                         ->sum('total_idr');
 
             $cashOut = Transaction::where('branch_id', $bId)
                         ->where('created_at', '>=', $dateCash . ' 00:00:00')
-                        ->where('created_at', '<', $targetDatetime) // Gunakan $targetDatetime
+                        ->where('created_at', '<', $targetDatetime) // Hitung persis sampai jam shift dimulai
                         ->where('payment_method', 'CASH')
                         ->where('type', 'buy')
                         ->sum('total_idr');
@@ -484,7 +483,7 @@ class MutationController extends Controller
             $branchEndCash = $startCash + $cashIn - $cashOut - $expenses + $bankToCash - $cashToBank;
             $totalCash += $branchEndCash;
 
-            // Akumulasi Stok Valas hingga $targetDatetime
+            // Akumulasi Stok Valas persis sampai $targetDatetime
             foreach ($allCurrencies as $curr) {
                 $code = $curr->code;
                 $sData = $capStocks[$code] ?? ['qty' => 0, 'rate' => 0];
@@ -494,7 +493,7 @@ class MutationController extends Controller
                 $trxGap = Transaction::where('branch_id', $bId)
                             ->where('currency', $code)
                             ->where('created_at', '>=', $dateCash . ' 00:00:00')
-                            ->where('created_at', '<', $targetDatetime) // Gunakan $targetDatetime
+                            ->where('created_at', '<', $targetDatetime) // Cutoff per Jam Shift
                             ->orderBy('created_at')
                             ->get(); 
                 
@@ -514,7 +513,6 @@ class MutationController extends Controller
             }
         }
         
-        // Finalisasi Stok Gabungan
         $finalStocks = [];
         foreach ($totalStocks as $code => $dt) {
             $finalStocks[$code] = [
