@@ -35,7 +35,7 @@ class DatabaseSeeder extends Seeder
         // 3. KANTOR CABANG PUSAT
         $pusat = Branch::firstOrCreate(
             ['name' => 'KANTOR PUSAT'],
-            ['address' => 'Jl. Kantor Pusat']
+            ['address' => 'Jl. Bypass Ngurah Rai']
         );
 
         // 4. USERS (HANYA OWNER & ADMIN)
@@ -44,10 +44,10 @@ class DatabaseSeeder extends Seeder
         $owner = User::firstOrCreate(
             ['username' => 'owner'],
             [
-                'name' => 'Big Boss Owner',
-                'email' => 'owner@example.com',
+                'name' => 'Rupiah Dolar Valuta',
+                'email' => 'rupiahdolarvaluta@gmail.com',
                 'role' => 'owner',
-                'password' => Hash::make('password'),
+                'password' => Hash::make('@Rupiahdolar123'),
                 'is_active' => true,
             ]
         );
@@ -60,10 +60,10 @@ class DatabaseSeeder extends Seeder
         $admin = User::firstOrCreate(
             ['username' => 'admin'],
             [
-                'name' => 'Manajer Operasional',
-                'email' => 'admin@example.com',
+                'name' => 'Admin',
+                'email' => 'adminrpd@gmail.com',
                 'role' => 'admin',
-                'password' => Hash::make('password'),
+                'password' => Hash::make('@Rupiahdolar123'),
                 'is_active' => true,
             ]
         );

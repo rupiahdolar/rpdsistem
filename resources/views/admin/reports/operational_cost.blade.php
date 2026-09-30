@@ -162,56 +162,56 @@
             </p>
         </div>
 
-        {{-- 3. TABEL WEB (Clean White Style) --}}
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden screen-only">
-            <table class="w-full text-sm text-left">
+        {{-- 3. TABEL WEB (Clean White Style & Responsive with Horizontal Scroll) --}}
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto screen-only">
+            <table class="w-full text-sm text-left min-w-[700px] md:min-w-full">
                 {{-- Header Putih dengan Garis Biru --}}
                 <thead class="bg-white text-primary border-b-2 border-primary uppercase text-xs font-bold tracking-wider">
                     <tr>
-                        <th class="px-6 py-4">Tanggal</th>
-                        <th class="px-6 py-4">Nama Pengeluaran</th>
-                        <th class="px-6 py-4">Kategori</th>
-                        <th class="px-6 py-4">Keterangan</th>
+                        <th class="px-4 md:px-6 py-4 whitespace-nowrap">Tanggal</th>
+                        <th class="px-4 md:px-6 py-4 min-w-[150px]">Nama Pengeluaran</th>
+                        <th class="px-4 md:px-6 py-4 whitespace-nowrap">Kategori</th>
+                        <th class="px-4 md:px-6 py-4 min-w-[180px]">Keterangan</th>
                         @if(Auth::user()->role == 'admin' || Auth::user()->role == 'owner')
-                        <th class="px-6 py-4">Cabang</th>
+                        <th class="px-4 md:px-6 py-4 whitespace-nowrap">Cabang</th>
                         @endif
-                        <th class="px-6 py-4 text-right">Jumlah (IDR)</th>
-                        <th class="px-6 py-4 text-center w-24">Aksi</th>
+                        <th class="px-4 md:px-6 py-4 text-right whitespace-nowrap">Jumlah (IDR)</th>
+                        <th class="px-4 md:px-6 py-4 text-center whitespace-nowrap sticky right-0 bg-white shadow-l md:shadow-none min-w-[100px]">Aksi</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100">
                     @forelse($expenses as $cost)
                     <tr class="hover:bg-blue-50 transition duration-150">
-                        <td class="px-6 py-4 whitespace-nowrap text-gray-900 font-mono font-bold text-xs">
+                        <td class="px-4 md:px-6 py-4 whitespace-nowrap text-gray-900 font-mono font-bold text-xs">
                             {{ \Carbon\Carbon::parse($cost->date)->format('d/m/Y') }}
                         </td>
-                        <td class="px-6 py-4 font-bold text-gray-800">
+                        <td class="px-4 md:px-6 py-4 font-bold text-gray-800">
                             {{ $cost->name }}
                         </td>
-                        <td class="px-6 py-4">
+                        <td class="px-4 md:px-6 py-4 whitespace-nowrap">
                             <span class="bg-gray-100 text-gray-700 px-2.5 py-1 rounded text-[10px] font-bold uppercase border border-gray-200 inline-block">
                                 {{ $cost->category }}
                             </span>
                         </td>
-                        <td class="px-6 py-4 text-gray-600 italic text-xs">
+                        <td class="px-4 md:px-6 py-4 text-gray-600 italic text-xs">
                             {{ $cost->description ?? '-' }}
                         </td>
                         @if(Auth::user()->role == 'admin' || Auth::user()->role == 'owner')
-                        <td class="px-6 py-4 text-gray-500 text-xs font-bold">
+                        <td class="px-4 md:px-6 py-4 text-gray-500 text-xs font-bold whitespace-nowrap">
                             {{ $cost->branch->name ?? 'PUSAT' }}
                         </td>
                         @endif
-                        <td class="px-6 py-4 text-right font-mono font-bold text-gray-900">
+                        <td class="px-4 md:px-6 py-4 text-right font-mono font-bold text-gray-900 whitespace-nowrap">
                             Rp {{ number_format($cost->amount) }}
                         </td>
-                        <td class="px-6 py-4 text-center">
+                        <td class="px-4 md:px-6 py-4 text-center whitespace-nowrap">
                             <div class="flex items-center justify-center gap-2">
-                                <button type="button" onclick="editBiaya('{{ $cost->id }}', '{{ $cost->date }}', '{{ addslashes($cost->name) }}', '{{ $cost->category }}', '{{ $cost->amount }}', '{{ addslashes($cost->description) }}')" class="text-yellow-500 hover:text-yellow-600 bg-yellow-50 p-1.5 rounded hover:bg-yellow-100 transition" title="Edit">
+                                <button type="button" onclick="editBiaya('{{ $cost->id }}', '{{ $cost->date }}', '{{ addslashes($cost->name) }}', '{{ $cost->category }}', '{{ $cost->amount }}', '{{ addslashes($cost->description) }}')" class="text-yellow-500 hover:text-yellow-600 bg-yellow-50 p-1.5 rounded hover:bg-yellow-100 transition shrink-0" title="Edit">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                                 </button>
                                 <form action="{{ route('biaya.destroy', $cost->id) }}" method="POST" onsubmit="return confirm('Hapus data?');" class="inline">
                                     @csrf @method('DELETE')
-                                    <button type="submit" class="text-red-500 hover:text-red-600 bg-red-50 p-1.5 rounded hover:bg-red-100 transition" title="Hapus">
+                                    <button type="submit" class="text-red-500 hover:text-red-600 bg-red-50 p-1.5 rounded hover:bg-red-100 transition shrink-0" title="Hapus">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                                     </button>
                                 </form>
@@ -224,8 +224,8 @@
                 </tbody>
                 <tfoot class="bg-gray-50 font-bold border-t border-gray-200">
                     <tr>
-                        <td colspan="{{ Auth::user()->role == 'admin' ? '5' : '4' }}" class="px-6 py-4 text-right uppercase text-xs text-gray-500 tracking-wider">Total Periode Ini</td>
-                        <td class="px-6 py-4 text-right font-mono text-lg text-primary">Rp {{ number_format($total ?? 0) }}</td>
+                        <td colspan="{{ Auth::user()->role == 'admin' ? '5' : '4' }}" class="px-4 md:px-6 py-4 text-right uppercase text-xs text-gray-500 tracking-wider whitespace-nowrap">Total Periode Ini</td>
+                        <td class="px-4 md:px-6 py-4 text-right font-mono text-lg text-primary whitespace-nowrap">Rp {{ number_format($total ?? 0) }}</td>
                         <td></td>
                     </tr>
                 </tfoot>
