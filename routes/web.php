@@ -3,6 +3,7 @@
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\CashierController;
+use App\Http\Controllers\DebtPaymentController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\MenuController;
 use App\Http\Controllers\AssessmentController;
@@ -21,11 +22,6 @@ use App\Http\Middleware\CheckRole;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Auth;
 
-/*
-|--------------------------------------------------------------------------
-| Web Routes - FINAL FIXED v3 (Closing Route Fix & APU-PPT Fix)
-|--------------------------------------------------------------------------
-*/
 
 // 1. ROOT (Penyortir Otomatis)
 Route::get('/', function () {
@@ -68,6 +64,9 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('/nasabah-transaction/{id}', [MenuController::class, 'destroy'])->name('nasabah.destroy');
     Route::delete('/nasabah/destroy-nota/{id}', [App\Http\Controllers\MenuController::class, 'destroyNota'])->name('nasabah.destroy_nota');
 
+    Route::delete('/nasabah/riwayat-hapus/{id}/permanent', [MenuController::class, 'destroyPermanentDeleted'])->name('nasabah.destroy_permanent_deleted');
+    Route::delete('/nasabah/riwayat-edit/{id}/permanent', [MenuController::class, 'destroyPermanentEdited'])->name('nasabah.destroy_permanent_edited');
+    
     // 2. Laporan Mutasi
     Route::get('/mutasi/harian', [App\Http\Controllers\MutationController::class, 'daily'])->name('mutasi.harian');
     Route::get('/mutasi/bulanan', [App\Http\Controllers\MutationController::class, 'monthly'])->name('mutasi.bulanan');
@@ -164,7 +163,15 @@ Route::middleware(['auth'])->group(function () {
             // 4. TUTUP BUKU (CLOSING)
             Route::get('/closing', [ClosingController::class, 'index'])->name('closing.index');
             Route::post('/closing', [ClosingController::class, 'process'])->name('closing.process');
+
+            Route::get('/debt-payments', [DebtPaymentController::class, 'index'])->name('debt_payments.index');
+            Route::post('/debt-payments', [DebtPaymentController::class, 'store'])->name('debt_payments.store');
+            Route::delete('/debt-payments/{id}', [DebtPaymentController::class, 'destroy'])->name('debt_payments.destroy');
+            Route::post('/loan-receipts', [DebtPaymentController::class, 'storeLoan'])->name('loan_receipts.store');
+            Route::delete('/loan-receipts/{id}', [DebtPaymentController::class, 'destroyLoan'])->name('loan_receipts.destroy');
         });
+
+        
 
         // MODULE: LAPORAN KEUANGAN LENGKAP
         Route::prefix('laporan')->name('keuangan.')->group(function() {

@@ -30,7 +30,7 @@
                         Excel
                     </a>
                     <a href="{{ request()->fullUrlWithQuery(['export' => 'pdf']) }}" target="_blank" class="bg-red-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-red-700 transition flex items-center gap-2 shadow-sm">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
                         PDF
                     </a>
                 </div>
@@ -298,7 +298,8 @@
             </div>
         </div>
     </div>
-{{-- TABEL RIWAYAT PENGHAPUSAN (KHUSUS ADMIN & KASIR) --}}
+
+    {{-- 1. TABEL RIWAYAT PENGHAPUSAN (KARTU PERTAMA) --}}
     <div class="mt-10 bg-white rounded-xl shadow-sm border border-red-200 overflow-hidden">
         <div class="bg-red-50 p-4 border-b border-red-100 flex justify-between items-center">
             <div>
@@ -327,6 +328,9 @@
                         <th class="px-4 py-3 text-right">Jumlah</th>
                         <th class="px-4 py-3 text-right">Rate</th>
                         <th class="px-4 py-3 text-right">Total (IDR)</th>
+                        @if(auth()->user()->role === 'owner')
+                            <th class="px-4 py-3 text-center">Aksi Permanen</th>
+                        @endif
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100 text-gray-600">
@@ -357,10 +361,20 @@
                         <td class="px-4 py-3 text-right font-mono">{{ number_format($log->amount_foreign, 2) }}</td>
                         <td class="px-4 py-3 text-right font-mono">{{ $log->rate == floor($log->rate) ? number_format($log->rate, 0, ',', '.') : number_format($log->rate, 2, ',', '.') }}</td>
                         <td class="px-4 py-3 text-right font-bold font-mono text-red-600">Rp {{ number_format($log->total_idr) }}</td>
+                        @if(auth()->user()->role === 'owner')
+                        <td class="px-4 py-3 text-center">
+                            <form action="{{ route('nasabah.destroy_permanent_deleted', $log->id) }}" method="POST" onsubmit="return confirm('Hapus permanen baris riwayat hapus ini?')">
+                                @csrf @method('DELETE')
+                                <button type="submit" class="text-red-500 hover:text-red-700 bg-red-50 p-1 rounded border border-red-200" title="Hapus Permanen Log">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                </button>
+                            </form>
+                        </td>
+                        @endif
                     </tr>
                     @empty
                     <tr>
-                        <td colspan="10" class="p-6 text-center text-gray-400 bg-gray-50">
+                        <td colspan="{{ auth()->user()->role === 'owner' ? '11' : '10' }}" class="p-6 text-center text-gray-400 bg-gray-50">
                             Belum ada riwayat penghapusan transaksi oleh Admin atau Kasir.
                         </td>
                     </tr>
@@ -375,4 +389,87 @@
         </div>
         @endif
     </div>
+
+    {{-- 2. TABEL RIWAYAT EDIT TRANSAKSI (KARTU KEDUA) --}}
+    <div class="mt-8 bg-white rounded-xl shadow-sm border border-yellow-200 overflow-hidden">
+        <div class="bg-yellow-50 p-4 border-b border-yellow-100 flex justify-between items-center">
+            <div>
+                <h3 class="font-bold text-yellow-800 text-sm flex items-center gap-2">
+                    <svg class="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                    Riwayat Edit Transaksi
+                </h3>
+                <p class="text-[11px] text-yellow-700 mt-0.5">Mencatat seluruh transaksi yang diedit oleh Admin atau Kasir (Kecuali Owner).</p>
+            </div>
+            <span class="bg-yellow-200 text-yellow-800 text-xs font-bold px-2.5 py-1 rounded-full">
+                {{ $editedTransactions->total() }} Riwayat
+            </span>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full text-xs text-left whitespace-nowrap">
+                <thead class="bg-gray-100 text-gray-700 uppercase text-[10px] font-bold">
+                    <tr>
+                        <th class="px-4 py-3">Waktu Edit</th>
+                        <th class="px-4 py-3">Diedit Oleh</th>
+                        <th class="px-4 py-3">No. Nota</th>
+                        <th class="px-4 py-3">Nama Nasabah</th>
+                        <th class="px-4 py-3">Rincian Perubahan</th>
+                        <th class="px-4 py-3 text-right">Total Lama (IDR)</th>
+                        <th class="px-4 py-3 text-right">Total Baru (IDR)</th>
+                        @if(auth()->user()->role === 'owner')
+                            <th class="px-4 py-3 text-center">Aksi Permanen</th>
+                        @endif
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 text-gray-600">
+                    @forelse($editedTransactions as $editLog)
+                    <tr class="hover:bg-yellow-50/50 transition">
+                        <td class="px-4 py-3 font-mono text-gray-700">
+                            {{ $editLog->created_at->format('d/m/Y H:i') }}
+                        </td>
+                        <td class="px-4 py-3 font-bold text-gray-800">
+                            {{ $editLog->edited_by_name }} 
+                            <span class="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded {{ $editLog->edited_by_role == 'admin' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700' }}">
+                                {{ $editLog->edited_by_role }}
+                            </span>
+                        </td>
+                        <td class="px-4 py-3 font-mono font-bold text-gray-800">{{ $editLog->no_nota }}</td>
+                        <td class="px-4 py-3 uppercase font-bold text-gray-700">{{ $editLog->customer_name }}</td>
+                        <td class="px-4 py-3 text-gray-600 italic max-w-xs truncate" title="{{ $editLog->changes_summary }}">
+                            {{ $editLog->changes_summary }}
+                        </td>
+                        <td class="px-4 py-3 text-right font-mono text-gray-500 line-through">Rp {{ number_format($editLog->old_total_idr) }}</td>
+                        <td class="px-4 py-3 text-right font-bold font-mono text-blue-600">Rp {{ number_format($editLog->new_total_idr) }}</td>
+                        
+                        {{-- HANYA OWNER BISA HAPUS LOG RIWAYAT PERMANEN --}}
+                        @if(auth()->user()->role === 'owner')
+                        <td class="px-4 py-3 text-center">
+                            <form action="{{ route('nasabah.destroy_permanent_edited', $editLog->id) }}" method="POST" onsubmit="return confirm('Hapus permanen baris riwayat edit ini?')">
+                                @csrf @method('DELETE')
+                                <button type="submit" class="text-red-500 hover:text-red-700 bg-red-50 p-1 rounded border border-red-200" title="Hapus Permanen Log">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                </button>
+                            </form>
+                        </td>
+                        @endif
+                    </tr>
+                    @empty
+                    <tr>
+                        <td colspan="{{ auth()->user()->role === 'owner' ? '8' : '7' }}" class="p-6 text-center text-gray-400 bg-gray-50">
+                            Belum ada riwayat perbaikan/edit transaksi oleh Admin atau Kasir.
+                        </td>
+                    </tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+
+        @if($editedTransactions->hasPages())
+        <div class="bg-gray-50 p-3 border-t border-gray-100">
+            {{ $editedTransactions->links() }}
+        </div>
+        @endif
+    </div>
+
+</div>
 @endsection

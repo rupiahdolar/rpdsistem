@@ -94,7 +94,7 @@
         </div>
 
         {{-- 5. AKUNTANSI & INPUT (Dropdown) --}}
-        <div x-data="{ open: {{ request()->routeIs('keuangan.biaya') || request()->routeIs('reports.cashflow') || request()->routeIs('accounting.*') || request()->routeIs('internal-mutation.*') ? 'true' : 'false' }} }" class="mb-1">
+        <div x-data="{ open: {{ request()->routeIs('keuangan.biaya') || request()->routeIs('reports.cashflow') || request()->routeIs('accounting.*') || request()->routeIs('internal-mutation.*') || request()->routeIs('accounting.debt_payments.*') ? 'true' : 'false' }} }" class="mb-1">
             <button @click="open = !open" 
                     class="w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all duration-200 group focus:outline-none"
                     :class="open ? 'bg-black/10 text-white font-bold' : 'text-white hover:bg-black/10'">
@@ -108,9 +108,13 @@
                 <a href="{{ route('keuangan.biaya') }}" class="block px-4 py-2 text-sm transition pl-12 {{ request()->routeIs('keuangan.biaya') ? 'text-white font-bold' : 'text-white/80 hover:text-white hover:bg-black/10' }}">Biaya Operasional</a>
                 <a href="{{ route('reports.cashflow') }}" class="block px-4 py-2 text-sm transition pl-12 {{ request()->routeIs('reports.cashflow') ? 'text-white font-bold' : 'text-white/80 hover:text-white hover:bg-black/10' }}">Arus Kas</a>
                 <a href="{{ route('internal-mutation.index') }}" class="block px-4 py-2 text-sm transition pl-12 {{ request()->routeIs('internal-mutation.*') ? 'text-white font-bold' : 'text-white/80 hover:text-white hover:bg-black/10' }}">Tarik / Setor Bank</a>
+                
                 @if(in_array(Auth::user()->role, ['admin', 'owner']))
-                    
                     <a href="{{ route('accounting.assets.index') }}" class="block px-4 py-2 text-sm transition pl-12 {{ request()->routeIs('accounting.assets.index') ? 'text-white font-bold' : 'text-white/80 hover:text-white hover:bg-black/10' }}">Aset Tetap</a>
+                    
+                    {{-- [BARU] MENU PEMBAYARAN UTANG --}}
+                    <a href="{{ route('accounting.debt_payments.index') }}" class="block px-4 py-2 text-sm transition pl-12 {{ request()->routeIs('accounting.debt_payments.*') ? 'text-white font-bold' : 'text-white/80 hover:text-white hover:bg-black/10' }}">Pinjaman / Utang</a>
+
                     <a href="{{ route('accounting.journals.index') }}" class="block px-4 py-2 text-sm transition pl-12 {{ request()->routeIs('accounting.journals.index') ? 'text-white font-bold' : 'text-white/80 hover:text-white hover:bg-black/10' }}">Jurnal Umum</a>
                     <a href="{{ route('accounting.coa.index') }}" class="block px-4 py-2 text-sm transition pl-12 {{ request()->routeIs('accounting.coa.index') ? 'text-white font-bold' : 'text-white/80 hover:text-white hover:bg-black/10' }}">Chart of Accounts</a>
                     

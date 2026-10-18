@@ -589,4 +589,93 @@ class AccountingService
             'credit' => $credit,
         ]);
     }
+    /**
+     * 9. CATAT PEMBAYARAN UTANG (Debt Payment) - FITUR BARU AMAN
+     */
+    public static function recordDebtPayment($payment)
+    {
+        try {
+            $refNo = 'DEBT-' . str_pad($payment->id, 6, '0', STR_PAD_LEFT);
+            
+            $entry = JournalEntry::create([
+                'date' => $payment->date,
+                'reference_no' => $refNo,
+                'description' => "Pembayaran Utang: " . ($payment->description ?? 'Pelunasan/Cicilan'),
+                'branch_id' => $payment->branch_id,
+                'created_by' => $payment->created_by,
+            ]);
+
+            // 1. Akun Utang yang dibayar (Debit - Mengurangi Kewajiban / Neraca)
+            $accLiability = ChartOfAccount::find($payment->liability_account_id);
+            
+            // 2. Akun Kas/Bank sumber dana pembayaran (Kredit - Mengurangi Aset / Neraca)
+            $accKas = ChartOfAccount::find($payment->payment_account_id);
+
+            // 3. Akun Beban Bunga (Opsional, masuk Laba Rugi jika ada bunga)
+            $accInterest = ChartOfAccount::where('code', self::ACC_BEBAN_LAIN)->first();
+
+            $totalCashOut = $payment->amount + ($payment->interest_amount ?? 0);
+
+            if ($accLiability && $accKas) {
+                // Sisi DEBIT: Pokok Utang (Mengurangi Kewajiban)
+                self::insertItem($entry->id, $accLiability->id, $payment->amount, 0);
+
+                // Sisi DEBIT: Beban Bunga (Jika ada, mengurangi laba di Laba Rugi)
+                if (($payment->interest_amount ?? 0) > 0 && $accInterest) {
+                    self::insertItem($entry->id, $accInterest->id, $payment->interest_amount, 0);
+                }
+
+                // Sisi KREDIT: Kas / Bank (Uang keluar sejumlah total pokok + bunga)
+                self::insertItem($entry->id, $accKas->id, 0, $totalCashOut);
+            }
+
+        } catch (\Exception $e) {
+            Log::error("Gagal menjurnal pembayaran utang: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Hapus Jurnal Pembayaran Utang
+     */
+    public static function deleteDebtPaymentJournal($paymentId)
+    {
+        $refNo = 'DEBT-' . str_pad($paymentId, 6, '0', STR_PAD_LEFT);
+        $entry = JournalEntry::where('reference_no', $refNo)->first();
+        
+        if ($entry) {
+            JournalItem::where('journal_entry_id', $entry->id)->delete();
+            $entry->delete();
+        }
+    }
+
+    public static function recordLoanReceipt($loan)
+    {
+        try {
+            $entry = JournalEntry::create([
+                'branch_id'    => $loan->branch_id,
+                'date'         => $loan->date,
+                'reference_no' => 'LOAN-IN-' . $loan->id,
+                'description'  => $loan->description ?? 'Penerimaan Pinjaman Baru',
+                'created_by'   => $loan->created_by,
+            ]);
+
+            // 1. DEBIT: Kas/Bank bertambah (Aset) menggunakan helper insertItem
+            self::insertItem($entry->id, $loan->cash_account_id, $loan->amount, 0);
+
+            // 2. KREDIT: Utang bertambah (Liabilitas) menggunakan helper insertItem
+            self::insertItem($entry->id, $loan->liability_account_id, 0, $loan->amount);
+
+        } catch (\Exception $e) {
+            Log::error("Gagal menjurnal penerimaan pinjaman: " . $e->getMessage());
+        }
+    }
+
+    public static function deleteLoanReceiptJournal($loanId)
+    {
+        $entry = JournalEntry::where('reference_no', 'LOAN-IN-' . $loanId)->first();
+        if ($entry) {
+            JournalItem::where('journal_entry_id', $entry->id)->delete();
+            $entry->delete();
+        }
+    }
 }

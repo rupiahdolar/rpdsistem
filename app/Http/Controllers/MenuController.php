@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\Transaction;
 use App\Models\DeletedTransaction;
+use App\Models\EditedTransaction; // [TAMBAHAN MODEL]
 use App\Models\Branch;
 use App\Models\User;
 use App\Models\Currency;       
@@ -97,19 +98,23 @@ class MenuController extends Controller
         $transactions = $query->paginate(20)->withQueryString();
         
         $branches = Branch::select('id', 'name')->get();
-       $activeCashiers = [];
+        $activeCashiers = [];
         if ($user->role === 'owner' || $user->role === 'admin') {
             $activeCashiers = User::where('role', '!=', 'owner')->select('id', 'name')->get();
         }
 
-        // --- SISIPKAN BARIS INI UNTUK MENGAMBIL DATA RIWAYAT HAPUS ---
+        // --- AMBIL DATA RIWAYAT HAPUS ---
         $deletedTransactions = DeletedTransaction::orderBy('created_at', 'desc')
                                 ->paginate(10, ['*'], 'deleted_page');
+
+        // --- [TAMBAHAN] AMBIL DATA RIWAYAT EDIT ---
+        $editedTransactions = EditedTransaction::orderBy('created_at', 'desc')
+                                ->paginate(10, ['*'], 'edited_page');
 
         return view('admin.customers.index', compact(
             'transactions', 'branches', 'activeCashiers',
             'startDate', 'endDate', 'search', 'sort', 'branchId', 'userId',
-            'deletedTransactions'
+            'deletedTransactions', 'editedTransactions'
         ));
     }
 
@@ -172,6 +177,8 @@ class MenuController extends Controller
 
         $request->validate($rules);
 
+        $currentUser = auth()->user();
+
         DB::beginTransaction();
         try {
             // Ambil referensi dari ID URL untuk mengetahui No Nota Asli sebelum diedit
@@ -180,6 +187,11 @@ class MenuController extends Controller
 
             // Ambil semua transaksi yang terkait dengan nota lama tersebut
             $existingTransactions = Transaction::where('no_nota', $oldNota)->get();
+
+            // Variabel untuk mencatat statistik perubahan sebelum/sesudah
+            $oldTotalSum = $existingTransactions->sum('total_idr');
+            $newTotalSum = 0;
+            $changesArr = [];
 
             // Looping update setiap baris transaksi
             foreach ($existingTransactions as $trx) {
@@ -191,6 +203,12 @@ class MenuController extends Controller
                 if ($inputItem) {
                     // Hitung total baru
                     $newTotalIDR = $inputItem['amount_foreign'] * $inputItem['rate'];
+                    $newTotalSum += $newTotalIDR;
+
+                    // Cek jika ada perubahan nominal valas atau rate
+                    if ($trx->amount_foreign != $inputItem['amount_foreign'] || $trx->rate != $inputItem['rate']) {
+                        $changesArr[] = "{$trx->currency}: Valas ({$trx->amount_foreign} -> {$inputItem['amount_foreign']}), Rate ({$trx->rate} -> {$inputItem['rate']})";
+                    }
 
                     // 1. Update Data Header (Disamakan semua baris)
                     $trx->fill([
@@ -229,6 +247,26 @@ class MenuController extends Controller
                 }
             }
 
+            // --- [TAMBAHAN LOG] CATAT RIWAYAT EDIT HANYA JIKA BUKAN OWNER ---
+            if ($currentUser->role !== 'owner') {
+                $summaryText = count($changesArr) > 0 
+                    ? implode(' | ', $changesArr) 
+                    : 'Pembaruan data identitas/header nasabah';
+
+                EditedTransaction::create([
+                    'no_nota'              => strtoupper($request->no_nota),
+                    'transaction_code'     => $refTrx->transaction_code,
+                    'customer_name'        => strtoupper($request->customer_name),
+                    'customer_identity_no' => strtoupper($request->customer_identity_no),
+                    'changes_summary'      => $summaryText,
+                    'old_total_idr'        => $oldTotalSum,
+                    'new_total_idr'        => $newTotalSum,
+                    'edited_by_name'       => $currentUser->name,
+                    'edited_by_role'       => $currentUser->role,
+                    'transaction_date'     => $request->created_at,
+                ]);
+            }
+
             DB::commit();
             return redirect()->route('nasabah.index')->with('success', 'Seluruh data dalam Nota berhasil diperbarui.');
 
@@ -242,35 +280,35 @@ class MenuController extends Controller
      * 4. HAPUS DATA
      */
     public function destroy($id)
-{
-    $trx = Transaction::findOrFail($id);
-    $user = auth()->user();
+    {
+        $trx = Transaction::findOrFail($id);
+        $user = auth()->user();
 
-    // 1. Jika Role Admin atau Kasir -> Catat ke Riwayat Penghapusan
-    if ($user->role !== 'owner') {
-        DeletedTransaction::create([
-            'no_nota'              => $trx->no_nota,
-            'transaction_code'     => $trx->transaction_code,
-            'customer_name'        => $trx->customer_name,
-            'customer_identity_no' => $trx->customer_identity_no,
-            'currency'             => $trx->currency,
-            'amount_foreign'       => $trx->amount_foreign,
-            'rate'                 => $trx->rate,
-            'total_idr'            => $trx->total_idr,
-            'type'                 => $trx->type,
-            'deleted_by_name'      => $user->name,
-            'deleted_by_role'      => $user->role,
-            'deletion_type'        => 'ITEM',
-            'transaction_date'     => $trx->created_at,
-        ]);
+        // 1. Jika Role Admin atau Kasir -> Catat ke Riwayat Penghapusan
+        if ($user->role !== 'owner') {
+            DeletedTransaction::create([
+                'no_nota'              => $trx->no_nota,
+                'transaction_code'     => $trx->transaction_code,
+                'customer_name'        => $trx->customer_name,
+                'customer_identity_no' => $trx->customer_identity_no,
+                'currency'             => $trx->currency,
+                'amount_foreign'       => $trx->amount_foreign,
+                'rate'                 => $trx->rate,
+                'total_idr'            => $trx->total_idr,
+                'type'                 => $trx->type,
+                'deleted_by_name'      => $user->name,
+                'deleted_by_role'      => $user->role,
+                'deletion_type'        => 'ITEM',
+                'transaction_date'     => $trx->created_at,
+            ]);
+        }
+
+        // 2. Hapus Jurnal & Data Transaksi Asli
+        AccountingService::deleteTransactionJournal($trx->transaction_code);
+        $trx->delete();
+
+        return back()->with('success', 'Data item transaksi berhasil dihapus.');
     }
-
-    // 2. Hapus Jurnal & Data Transaksi Asli
-    AccountingService::deleteTransactionJournal($trx->transaction_code);
-    $trx->delete();
-
-    return back()->with('success', 'Data item transaksi berhasil dihapus.');
-}
 
     /**
      * Hapus Seluruh Item dalam Satu Nota
@@ -316,6 +354,37 @@ class MenuController extends Controller
             return back()->with('error', 'Gagal menghapus nota: ' . $e->getMessage());
         }
     }
+
+    /**
+     * [TAMBAHAN] HAPUS PERMANEN BARIS RIWAYAT HAPUS (KHUSUS OWNER)
+     */
+    public function destroyPermanentDeleted($id)
+    {
+        if (auth()->user()->role !== 'owner') {
+            return back()->with('error', 'Akses Ditolak. Hanya Owner yang dapat menghapus riwayat.');
+        }
+
+        $log = DeletedTransaction::findOrFail($id);
+        $log->delete();
+
+        return back()->with('success', 'Baris riwayat hapus berhasil dihapus permanen.');
+    }
+
+    /**
+     * [TAMBAHAN] HAPUS PERMANEN BARIS RIWAYAT EDIT (KHUSUS OWNER)
+     */
+    public function destroyPermanentEdited($id)
+    {
+        if (auth()->user()->role !== 'owner') {
+            return back()->with('error', 'Akses Ditolak. Hanya Owner yang dapat menghapus riwayat.');
+        }
+
+        $log = EditedTransaction::findOrFail($id);
+        $log->delete();
+
+        return back()->with('success', 'Baris riwayat edit berhasil dihapus permanen.');
+    }
+
     /**
      * 5. EXPORT (CSV LENGKAP) - [MEMORY SAFE MODE]
      * Menggunakan cursor() agar bisa export jutaan data tanpa RAM meledak.
@@ -502,7 +571,6 @@ class MenuController extends Controller
                         ->get();
 
         $transaction = $transactions->first();
-
 
         return view('admin.customers.print_struk', compact('transaction', 'transactions'));
     }

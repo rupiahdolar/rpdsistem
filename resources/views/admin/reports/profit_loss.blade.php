@@ -209,15 +209,19 @@
             {{-- 3. BEBAN OPERASIONAL --}}
             <div class="border border-gray-200 rounded-xl overflow-hidden shadow-sm">
                 <div class="bg-gray-50 px-6 py-3 border-b border-gray-200 flex justify-between items-center">
-                    <h4 class="font-bold text-sm text-gray-700 uppercase tracking-widest">3. Beban Operasional</h4>
+                    <h4 class="font-bold text-sm text-gray-700 uppercase tracking-widest">3. Beban Operasional & Biaya Lain</h4>
                 </div>
                 <div class="p-6 bg-white text-sm space-y-3">
-                    @foreach($expenses as $exp)
+                    {{-- [BARU] Perulangan dinamis untuk menampilkan semua jenis beban (Operasional, Penyusutan, Bunga Utang, dll) --}}
+                    @forelse($expenses as $exp)
                     <div class="flex justify-between text-gray-600 border-b border-gray-50 pb-2 last:border-0 last:pb-0">
-                        <span>Beban {{ ucwords(strtolower($exp->category)) }}</span>
+                        <span>{{ $exp->category }}</span>
                         <span class="font-mono">{{ number_format($exp->total) }}</span>
                     </div>
-                    @endforeach
+                    @empty
+                    <div class="text-center text-gray-400 italic py-2">Tidak ada beban pada periode ini.</div>
+                    @endforelse
+
                     <div class="flex justify-between font-bold text-gray-800 pt-4 border-t border-gray-200 mt-2 text-base">
                         <span>TOTAL BEBAN</span>
                         <span class="font-mono text-red-600">({{ number_format($totalBeban) }})</span>

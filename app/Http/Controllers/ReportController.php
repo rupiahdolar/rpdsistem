@@ -188,6 +188,23 @@ class ReportController extends Controller
             ]);
             $totalBeban += $depreciation;
         }
+            $otherJournalExpenses = JournalItem::whereHas('chartOfAccount', fn($q) => $q->where('type', 'EXPENSE'))
+                            ->whereHas('journalEntry', function($je) use ($month, $year, $branchId) {
+                                $je->whereMonth('date', $month)
+                                ->whereYear('date', $year)
+                                ->where('reference_no', 'NOT LIKE', 'EXP-%') // Supaya biaya operasional biasa tidak double-count
+                                ->when($branchId, fn($sq) => $sq->where('branch_id', $branchId));
+                            })
+                            ->with('chartOfAccount')
+                            ->get();
+
+            foreach($otherJournalExpenses as $jItem) {
+                $expenses->push((object)[
+                    'category' => strtoupper($jItem->chartOfAccount->name ?? 'BEBAN LAINNYA'),
+                    'total' => $jItem->debit - $jItem->credit
+                ]);
+                $totalBeban += ($jItem->debit - $jItem->credit);
+            }
 
         // 3. LOGIKA HPP SINKRON 100% DENGAN MUTASI BULANAN
         $endData = $this->getAccumulatedStart($endDate->copy()->addDay()->format('Y-m-d'), $branchId);
