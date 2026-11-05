@@ -129,17 +129,18 @@
     </style>
 
     {{-- LOGIKA DATA NOTA (PHP) --}}
-    @php
-        $lastTrxGroup = collect([]);
-        $printNota = null;
-        
-        if(session('transaction_success') && isset($todayTransactions) && $todayTransactions->isNotEmpty()){
-            $lastNota = $todayTransactions->first()->no_nota;
-            $printNota = $lastNota;
-            $lastTrxGroup = $todayTransactions->where('no_nota', $lastNota);
-            $trxHeader = $lastTrxGroup->first(); 
-        }
-    @endphp
+        @php
+            $lastTrxGroup = collect([]);
+            $printNota = null;
+            
+            if(session('transaction_success') && isset($todayTransactions) && $todayTransactions->isNotEmpty()){
+                $lastNota = $todayTransactions->first()->no_nota;
+                $printNota = $lastNota;
+                // Tambahkan fungsi sortBy('id') di sini agar urutannya kembali dari input pertama
+                $lastTrxGroup = $todayTransactions->where('no_nota', $lastNota)->sortBy('id');
+                $trxHeader = $lastTrxGroup->first(); 
+            }
+        @endphp
 
     {{-- AREA NOTA (HANYA MUNCUL SAAT PRINT) --}}
     <div id="receipt-area">

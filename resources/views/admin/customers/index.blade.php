@@ -398,7 +398,7 @@
                     <svg class="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                     Riwayat Edit Transaksi
                 </h3>
-                <p class="text-[11px] text-yellow-700 mt-0.5">Mencatat seluruh transaksi yang diedit oleh Admin atau Kasir (Kecuali Owner).</p>
+                <p class="text-[11px] text-yellow-700 mt-0.5">Pencatatan seluruh transaksi yang diedit</p>
             </div>
             <span class="bg-yellow-200 text-yellow-800 text-xs font-bold px-2.5 py-1 rounded-full">
                 {{ $editedTransactions->total() }} Riwayat

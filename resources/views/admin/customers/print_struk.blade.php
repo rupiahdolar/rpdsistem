@@ -193,7 +193,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach($transactions as $item)
+                    @foreach($transactions->sortBy('id') as $item)
                     <tr>
                         <td>{{ $item->currency }}</td>
                         <td>{{ number_format($item->amount_foreign, 0) }}</td> 
