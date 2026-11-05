@@ -127,15 +127,37 @@
     </div>
     @endif
 
-    {{-- TABLE DATA --}}
-    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div class="overflow-x-auto">
+    {{-- TABLE DATA DENGAN DUAL SCROLLBAR & STICKY COLUMN --}}
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden" 
+         x-data="{
+            init() {
+                const topScroll = this.$refs.topScroll;
+                const mainTable = this.$refs.mainTable;
+                
+                // Samakan lebar scrollbar atas dengan lebar tabel asli di bawahnya
+                this.$refs.topScrollContent.style.width = mainTable.scrollWidth + 'px';
+                
+                topScroll.addEventListener('scroll', () => {
+                    mainTable.scrollLeft = topScroll.scrollLeft;
+                });
+                mainTable.addEventListener('scroll', () => {
+                    topScroll.scrollLeft = mainTable.scrollLeft;
+                });
+            }
+         }">
+        
+        {{-- SCROLLBAR TAMBAHAN DI ATAS (Agar bisa geser tanpa scroll ke bawah) --}}
+        <div x-ref="topScroll" class="overflow-x-auto bg-gray-50 border-b border-gray-200" style="height: 16px;">
+            <div x-ref="topScrollContent" style="height: 1px;"></div>
+        </div>
+
+        <div class="overflow-x-auto" x-ref="mainTable">
             <table class="w-full text-sm text-left whitespace-nowrap">
                 <thead class="bg-primary text-white border-b-2 border-primary uppercase text-[10px] tracking-wider font-bold">
                     <tr>
                         <th class="px-4 py-3">Tanggal</th>
                         <th class="px-4 py-3">No. Nota</th>
-                        <th class="px-4 py-3">Nasabah & PIC</th>
+                        <th class="px-4 py-3 sticky left-0 z-30 bg-primary shadow-[4px_0_8px_-4px_rgba(0,0,0,0.2)]">Nasabah & PIC</th>
                         <th class="px-4 py-3">Tipe ID</th>
                         <th class="px-4 py-3">No ID</th>
                         <th class="px-4 py-3 text-center">L/P</th>
@@ -150,7 +172,7 @@
                         <th class="px-4 py-3 text-right">Jumlah</th>
                         <th class="px-4 py-3 text-right">Rate</th>
                         <th class="px-4 py-3 text-right">Total (IDR)</th>
-                        <th class="px-4 py-3 text-center bg-yellow-500 text-white sticky right-0 z-20 shadow-lg">Aksi</th>
+                        <th class="px-4 py-3 text-center bg-yellow-500 text-white sticky right-0 z-30 shadow-lg">Aksi</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100 text-gray-600 text-xs">
@@ -167,8 +189,8 @@
                             {{ $trx->no_nota }}
                         </td>
 
-                        {{-- 3. Nama Nasabah & Tipe --}}
-                        <td class="px-4 py-3">
+                        {{-- 3. Nama Nasabah & Tipe (STICKY KIRI) --}}
+                        <td class="px-4 py-3 sticky left-0 z-20 bg-white group-hover:bg-blue-50 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.1)]">
                             <div class="flex flex-col">
                                 @if($trx->customer_type == 'CORPORATE')
                                     <span class="bg-purple-100 text-purple-700 border border-purple-200 px-1.5 py-0.5 rounded text-[9px] font-bold w-fit mb-1">
@@ -212,8 +234,8 @@
                         <td class="px-4 py-3 text-right font-mono text-gray-500">{{ $trx->rate == floor($trx->rate) ? number_format($trx->rate, 0, ',', '.') : number_format($trx->rate, 2, ',', '.') }}</td>
                         <td class="px-4 py-3 text-right font-bold text-primary font-mono bg-blue-50/30">Rp {{ number_format($trx->total_idr) }}</td>
 
-                        {{-- 18. AKSI --}}
-                        <td class="px-4 py-3 text-center border-l border-gray-100 sticky right-0 z-10 bg-white group-hover:bg-blue-50 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.1)]">
+                        {{-- 18. AKSI (STICKY KANAN) --}}
+                        <td class="px-4 py-3 text-center border-l border-gray-100 sticky right-0 z-20 bg-white group-hover:bg-blue-50 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.1)]">
                             <div class="flex items-center justify-center gap-2">
                                 
                                 {{-- Tombol Print --}}
@@ -307,7 +329,7 @@
                     <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                     Riwayat Penghapusan Transaksi
                 </h3>
-                <p class="text-[11px] text-red-600 mt-0.5">Mencatat seluruh transaksi yang terhapus.</p>
+                <p class="text-[11px] text-red-600 mt-0.5">Pencatatan seluruh transaksi yang dihapus.</p>
             </div>
             <span class="bg-red-200 text-red-800 text-xs font-bold px-2.5 py-1 rounded-full">
                 {{ $deletedTransactions->total() }} Riwayat

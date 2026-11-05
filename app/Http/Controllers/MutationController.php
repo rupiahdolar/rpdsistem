@@ -11,6 +11,8 @@ use App\Models\InitialCapital;
 use App\Models\User;
 use App\Models\ChartOfAccount;
 use App\Models\InternalMutation;
+use App\Models\LoanReceipt;
+use App\Models\DebtPayment;
 use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB; 
@@ -106,9 +108,25 @@ class MutationController extends Controller
         $bankToCash = (clone $qMut)->where('type', 'bank_to_cash')->sum('amount'); // Masuk Kas
         $cashToBank = (clone $qMut)->where('type', 'cash_to_bank')->sum('amount'); // Keluar Kas
 
+        // [BARU] Ambil Akun Kas Fisik (IDR Cash / Kas Kasir)
+        $cashAccountIds = ChartOfAccount::where('type', 'ASSET')
+            ->where(function($q) {
+                $q->where('code', '1-1002')->orWhere('name', 'LIKE', '%KAS%');
+            })->where('name', 'NOT LIKE', '%BANK%')->pluck('id')->toArray();
+
+        // [BARU] Penerimaan Pinjaman Tunai (Kas Masuk)
+        $qLoan = LoanReceipt::whereBetween('date', [$startDate, $endDate]);
+        if($branchId && $branchId != -1) $qLoan->where('branch_id', $branchId);
+        $loanCashIn = $qLoan->whereIn('cash_account_id', $cashAccountIds)->sum('amount');
+
+        // [BARU] Pembayaran Utang Tunai (Kas Keluar: Pokok + Bunga)
+        $qDebt = DebtPayment::whereBetween('date', [$startDate, $endDate]);
+        if($branchId && $branchId != -1) $qDebt->where('branch_id', $branchId);
+        $debtCashOut = $qDebt->whereIn('payment_account_id', $cashAccountIds)->sum(DB::raw('amount + interest_amount'));
+
         // --- 5. HITUNG SALDO AKHIR REAL ---
-        $totalCashIn  = $realCashSell + $bankToCash;
-        $totalCashOut = $realCashBuy + $cashToBank + $expense;
+        $totalCashIn  = $realCashSell + $bankToCash + $loanCashIn;
+        $totalCashOut = $realCashBuy + $cashToBank + $expense + $debtCashOut;
         
         $endCash = $startCash + $totalCashIn - $totalCashOut;
 
@@ -218,9 +236,24 @@ class MutationController extends Controller
         $bankToCash = (clone $qMut)->where('type', 'bank_to_cash')->sum('amount'); 
         $cashToBank = (clone $qMut)->where('type', 'cash_to_bank')->sum('amount'); 
 
+        // [BARU] Definisikan Akun Kas Fisik
+        $cashAccountIds = ChartOfAccount::where('type', 'ASSET')
+            ->where(function($q) {
+                $q->where('code', '1-1002')->orWhere('name', 'LIKE', '%KAS%');
+            })->where('name', 'NOT LIKE', '%BANK%')->pluck('id')->toArray();
+
+        // [BARU] Pinjaman & Pembayaran Utang Bulanan
+        $loanCashIn = LoanReceipt::whereBetween('date', [$startDate, $endDate])
+                        ->when($branchId && $branchId != -1, fn($q) => $q->where('branch_id', $branchId))
+                        ->whereIn('cash_account_id', $cashAccountIds)->sum('amount');
+
+        $debtCashOut = DebtPayment::whereBetween('date', [$startDate, $endDate])
+                        ->when($branchId && $branchId != -1, fn($q) => $q->where('branch_id', $branchId))
+                        ->whereIn('payment_account_id', $cashAccountIds)->sum(DB::raw('amount + interest_amount'));
+
         // Total Flow Kas Fisik
-        $totalCashIn  = $realCashSell + $bankToCash; // Uang Masuk
-        $totalCashOut = $realCashBuy + $cashToBank + $expense; // Uang Keluar
+        $totalCashIn  = $realCashSell + $bankToCash + $loanCashIn; // Uang Masuk
+        $totalCashOut = $realCashBuy + $cashToBank + $expense + $debtCashOut; // Uang Keluar
 
         // ---------------------------------------------------------------------
         // STEP 3: BACK-CALCULATION (HITUNG MUNDUR SALDO AWAL)
@@ -480,7 +513,25 @@ class MutationController extends Controller
             $bankToCash = (clone $qMut)->where('type', 'bank_to_cash')->sum('amount');
             $cashToBank = (clone $qMut)->where('type', 'cash_to_bank')->sum('amount');
             
-            $branchEndCash = $startCash + $cashIn - $cashOut - $expenses + $bankToCash - $cashToBank;
+            // [BARU] Akumulasi Pinjaman & Utang untuk Saldo Awal
+            $cashAccountIds = ChartOfAccount::where('type', 'ASSET')
+                ->where(function($q) {
+                    $q->where('code', '1-1002')->orWhere('name', 'LIKE', '%KAS%');
+                })->where('name', 'NOT LIKE', '%BANK%')->pluck('id')->toArray();
+
+            $loanInStart = LoanReceipt::where('branch_id', $bId)
+                            ->where('date', '>=', $dateCash)
+                            ->where('date', '<', $targetDateOnly)
+                            ->whereIn('cash_account_id', $cashAccountIds)
+                            ->sum('amount');
+
+            $debtOutStart = DebtPayment::where('branch_id', $bId)
+                            ->where('date', '>=', $dateCash)
+                            ->where('date', '<', $targetDateOnly)
+                            ->whereIn('payment_account_id', $cashAccountIds)
+                            ->sum(DB::raw('amount + interest_amount'));
+
+            $branchEndCash = $startCash + $cashIn - $cashOut - $expenses + $bankToCash - $cashToBank + $loanInStart - $debtOutStart;
             $totalCash += $branchEndCash;
 
             // Akumulasi Stok Valas persis sampai $targetDatetime

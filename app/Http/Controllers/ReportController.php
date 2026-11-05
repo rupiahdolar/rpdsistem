@@ -219,29 +219,26 @@ class ReportController extends Controller
         $nilaiStokAkhir = 0;
 
         foreach ($tempCurrencyReport as $row) {
-            $code = $row['currency'];
-            $realQtyEnd = $realEndStocks[$code]['qty'] ?? 0;
-            $realRateEnd = $realEndStocks[$code]['rate'] ?? 0;
-            $realValEnd = $realQtyEnd * $realRateEnd;
+          $code = $row['currency'];
+          $realQtyEnd = $realEndStocks[$code]['qty'] ?? 0;
+          $realRateEnd = $realEndStocks[$code]['rate'] ?? 0;
+          $realValEnd = $realQtyEnd * $realRateEnd;
 
-            $qtyBeli = $row['beli']['qty']; $qtyJual = $row['jual']['qty'];
-            $derivedQtyStart = $realQtyEnd - $qtyBeli + $qtyJual;
-            $rateStart = $row['awal']['rate']; 
-            
-            if ($rateStart == 0 && $derivedQtyStart > 0) {
-                if ($realRateEnd > 0) $rateStart = $realRateEnd;
-                elseif ($qtyBeli > 0) $rateStart = $row['beli']['total'] / $qtyBeli; 
-                elseif ($qtyJual > 0) $rateStart = $row['jual']['total'] / $qtyJual; 
-            }
-            
-            $derivedValStart = $derivedQtyStart * $rateStart;
+          $qtyBeli = $row['beli']['qty']; $qtyJual = $row['jual']['qty'];
+          $derivedQtyStart = $realQtyEnd - $qtyBeli + $qtyJual;
+          $rateStart = $row['awal']['rate']; 
 
-            $valuasiAwalBulan += $derivedValStart;
-            $nilaiStokAkhir += $realValEnd;
-        }
+          if ($rateStart == 0 && $derivedQtyStart > 0) {
+              if ($realRateEnd > 0) $rateStart = $realRateEnd;
+              elseif ($qtyBeli > 0) $rateStart = $row['beli']['total'] / $qtyBeli; 
+              elseif ($qtyJual > 0) $rateStart = $row['jual']['total'] / $qtyJual; 
+          }
 
-        $valuasiAwalBulan += $derivedValStart;
-        $nilaiStokAkhir += $realValEnd;
+          $derivedValStart = $derivedQtyStart * $rateStart;
+
+          $valuasiAwalBulan += $derivedValStart;
+          $nilaiStokAkhir += $realValEnd;
+      }
 
         // Cek apakah sudah ada Jurnal HPP hasil Tutup Buku pada periode ini
         $hppJournalItem = JournalItem::whereHas('chartOfAccount', fn($q) => $q->where('code', '5-1001'))
@@ -350,7 +347,15 @@ class ReportController extends Controller
         $totalPembelian = $trxAll->where('type', 'buy')->sum('total_idr');
 
         // HPP = Total Pembelian - Persediaan Akhir
-        $hpp = $totalPembelian - $realInventoryValuation;
+        $startOfYear = Carbon::createFromDate($year, 1, 1)->format('Y-m-d');
+        $startYearData = $this->getAccumulatedStart($startOfYear, null);
+        $valuasiAwalTahun = 0;
+        foreach ($startYearData['stocks'] as $stk) {
+            $valuasiAwalTahun += (($stk['qty'] ?? 0) * ($stk['rate'] ?? 0));
+        }
+
+        // HPP = (Persediaan Awal + Total Pembelian) - Persediaan Akhir
+        $hpp = ($valuasiAwalTahun + $totalPembelian) - $realInventoryValuation;
         $grossProfit = $totalPenjualan - $hpp;
 
         // Total Beban dari Jurnal

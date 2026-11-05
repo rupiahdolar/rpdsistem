@@ -111,6 +111,7 @@
             <table class="w-full text-left border-collapse whitespace-nowrap">
                 <thead class="bg-white text-primary border-b-2 border-primary uppercase text-xs tracking-wider font-bold">
                     <tr>
+                        <th class="px-6 py-4 text-center">Aksi</th>
                         <th class="px-6 py-4">Nama Nasabah</th>
                         <th class="px-6 py-4">Identitas</th>
                         <th class="px-6 py-4">Warga Negara</th>
@@ -125,6 +126,24 @@
                     @forelse($kycData as $row)
                     <tr class="transition duration-150 {{ $row->risk_level == 'HIGH' ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-blue-50' }}">
                         
+                        {{-- [PINDAHKAN KE DEPAN] Tombol Aksi Tampilkan --}}
+                        <td class="px-6 py-4 text-center">
+                            <a href="{{ route('nasabah.index', [
+                                'search'     => $row->customer_identity_no, 
+                                'start_date' => $date, 
+                                'end_date'   => $date, 
+                                'branch_id'  => $branchId
+                            ]) }}" 
+                            class="inline-flex items-center px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-bold hover:bg-opacity-90 shadow-sm transition gap-1"
+                            title="Tampilkan semua transaksi nasabah ini">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 9 0 016 0z"/>
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                </svg>
+                                Tampilkan
+                            </a>
+                        </td>
+
                         {{-- 1. Nama --}}
                         <td class="px-6 py-4 font-bold uppercase text-gray-800">
                             {{ $row->customer_name }}
@@ -187,7 +206,7 @@
                     </tr>
                     @empty
                     <tr>
-                        <td colspan="7" class="p-10 text-center text-gray-400">
+                        <td colspan="8" class="p-10 text-center text-gray-400">
                             <div class="flex flex-col items-center justify-center">
                                 <svg class="w-10 h-10 text-gray-200 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                                 <p class="text-sm font-medium">Tidak ada transaksi pada tanggal ini.</p>

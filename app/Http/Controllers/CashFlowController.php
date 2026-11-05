@@ -9,7 +9,9 @@ use App\Models\Branch;
 use App\Models\Transaction;      
 use App\Models\Expense;          
 use App\Models\InitialCapital;   
-use App\Models\InternalMutation; 
+use App\Models\InternalMutation;
+use App\Models\LoanReceipt;
+use App\Models\DebtPayment; 
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
@@ -108,8 +110,28 @@ class CashFlowController extends Controller
             $bankToCash = $mutSummary->bank_to_cash ?? 0;
             $cashToBank = $mutSummary->cash_to_bank ?? 0;
 
-            // C. Total Saldo Awal Cabang Ini
-            $branchStartBalance = $startCash + $cashIn - $cashOut - $expenses + $bankToCash - $cashToBank;
+            // [BARU] Ambil Akun Kas Fisik untuk Arus Kas
+            $cashAccountIds = ChartOfAccount::where('type', 'ASSET')
+                ->where(function($q) {
+                    $q->where('code', '1-1002')->orWhere('name', 'LIKE', '%KAS%');
+                })->where('name', 'NOT LIKE', '%BANK%')->pluck('id')->toArray();
+
+            // [BARU] Akumulasi Pinjaman Masuk sebelum tanggal filter
+            $loanInStart = LoanReceipt::where('branch_id', $bId)
+                            ->where('date', '>=', $dateCheckpoint)
+                            ->where('date', '<', $filterDate)
+                            ->whereIn('cash_account_id', $cashAccountIds)
+                            ->sum('amount');
+
+            // [BARU] Akumulasi Pembayaran Utang Keluar sebelum tanggal filter
+            $debtOutStart = DebtPayment::where('branch_id', $bId)
+                            ->where('date', '>=', $dateCheckpoint)
+                            ->where('date', '<', $filterDate)
+                            ->whereIn('payment_account_id', $cashAccountIds)
+                            ->sum(DB::raw('amount + interest_amount'));
+
+            // C. Total Saldo Awal Cabang Ini (Ditambah Pinjaman, Dikurang Bayar Utang)
+            $branchStartBalance = $startCash + $cashIn - $cashOut - $expenses + $bankToCash - $cashToBank + $loanInStart - $debtOutStart;
             
             // Akumulasi ke Total Global
             $saldoAwal += $branchStartBalance;

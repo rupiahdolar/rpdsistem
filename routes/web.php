@@ -56,6 +56,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/nasabah/data', [MenuController::class, 'nasabah'])->name('nasabah.index');
     Route::get('/nasabah/kyc', [MenuController::class, 'kyc'])->name('nasabah.kyc');
     Route::post('/nasabah/kyc/threshold-rate', [MenuController::class, 'updateThresholdRate'])->name('nasabah.kyc.threshold-rate');
+    Route::get('/nasabah/{id}/print', [App\Http\Controllers\MenuController::class, 'printStruk'])->name('nasabah.print');
     Route::get('/nasabah/assessment', [AssessmentController::class, 'index'])->name('nasabah.assessment');
     Route::get('/nasabah/edit/{id}', [MenuController::class, 'edit'])->name('nasabah.edit');
     Route::post('/nasabah/import', [TransactionController::class, 'importExcel'])->name('nasabah.import');
@@ -195,6 +196,10 @@ Route::middleware(['auth'])->group(function () {
             
             Route::get('/ltkt', [ComplianceController::class, 'ltktIndex'])->name('ltkt.index');
             Route::get('/ltkm', [ComplianceController::class, 'ltkmIndex'])->name('ltkm.index');
+            
+            // [BARU] TAMBAHKAN RUTE SCAN DTTOT DI SINI
+            Route::post('/ltkm/scan-dttot', [ComplianceController::class, 'scanDttot'])->name('ltkm.scan');
+
             Route::post('/ltkm/store', [ComplianceController::class, 'ltkmStore'])->name('ltkm.store');
             Route::delete('/ltkm/{id}', [ComplianceController::class, 'ltkmDestroy'])->name('ltkm.destroy');
         });

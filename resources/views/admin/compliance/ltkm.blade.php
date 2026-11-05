@@ -36,6 +36,111 @@
         </div>
     </div>
 
+    {{-- KOTAK & TOMBOL SCAN DTTOT --}}
+    <div class="mb-6 bg-indigo-50 border border-indigo-200 rounded-lg p-4 flex flex-col md:flex-row justify-between items-center gap-4 shadow-sm">
+        <div>
+            <h4 class="font-bold text-indigo-900 text-xs uppercase tracking-wider flex items-center gap-2">
+                <svg class="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                Screening Otomatis Database DTTOT
+            </h4>
+            <p class="text-xs text-indigo-700 mt-0.5">
+                Pindai seluruh data transaksi nasabah terhadap daftar terduga teroris (DTTOT). Hasil bersifat sementara dan akan bersih jika halaman di-refresh.
+            </p>
+        </div>
+        
+        {{-- FORM DENGAN EVENT LOADING --}}
+        <form action="{{ route('compliance.ltkm.scan') }}" method="POST" id="scanForm" onsubmit="showLoadingAnimation()">
+            @csrf
+            <button type="submit" id="scanBtn" class="bg-indigo-600 text-white px-4 py-2 rounded text-xs font-bold uppercase tracking-wider hover:bg-indigo-700 transition shadow flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path></svg>
+                Mulai Scan DTTOT
+            </button>
+        </form>
+    </div>
+
+    {{-- OVERLAY ANIMASI LOADING TENGAH (DEFAULT HIDDEN) --}}
+    <div id="loadingOverlay" class="fixed inset-0 bg-black/50 z-[999] hidden flex flex-col items-center justify-center backdrop-blur-xs">
+        <div class="bg-white p-6 rounded-xl shadow-2xl flex flex-col items-center space-y-4">
+            <svg class="animate-spin w-12 h-12 text-indigo-600" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <div class="text-center">
+                <h3 class="font-bold text-gray-800 text-sm uppercase tracking-wide">Sedang Memindai Data...</h3>
+                <p class="text-xs text-gray-500 mt-1">Mencocokkan seluruh data nasabah dengan database DTTOT.</p>
+            </div>
+        </div>
+    </div>
+
+    {{-- SCRIPT JAVASCRIPT UNTUK LOADING & NOTIFIKASI ALERT JUMLAH MATCH --}}
+    <script>
+        function showLoadingAnimation() {
+            document.getElementById('loadingOverlay').classList.remove('hidden');
+            let btn = document.getElementById('scanBtn');
+            btn.disabled = true;
+            btn.innerHTML = 'Memindai...';
+        }
+    </script>
+
+    @if(session()->has('match_count'))
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            let count = {{ session('match_count') }};
+            if(count > 0) {
+                alert("Scan Selesai! Ditemukan " + count + " data nasabah yang cocok/potensi match dengan DTTOT. Silakan cek tabel di bawah.");
+            } else {
+                alert("Scan Selesai! Aman, tidak ditemukan kecocokan data nasabah dengan DTTOT.");
+            }
+        });
+    </script>
+    @endif
+
+    {{-- HASIL SCAN DTTOT (MUNCUL JIKA TOMBOL DIKLIK) --}}
+    @if(session('scan_results'))
+    <div class="mb-6 bg-red-50 border-2 border-red-500 rounded-lg p-5 shadow-md">
+        <div class="flex items-center justify-between mb-3">
+            <h3 class="font-bold text-red-800 text-sm uppercase tracking-wide flex items-center gap-2">
+                <svg class="w-5 h-5 text-red-600 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                Hasil Pemindaian DTTOT (Ditemukan: {{ count(session('scan_results')) }} Potensi Match)
+            </h3>
+            <span class="text-[10px] text-red-600 font-bold bg-white px-2 py-1 rounded border border-red-200">
+                Data Sementara (Akan bersih jika di-refresh)
+            </span>
+        </div>
+
+        <div class="overflow-x-auto bg-white rounded border border-red-200">
+            <table class="w-full text-left text-xs">
+                <thead class="bg-red-100 text-red-900 font-bold uppercase">
+                    <tr>
+                        <th class="p-3">Nama Nasabah (Sistem)</th>
+                        <th class="p-3">No. Identitas / NIK</th>
+                        <th class="p-3">Matched DTTOT List</th>
+                        <th class="p-3">Alasan / Indikasi</th>
+                        <th class="p-3 text-right">Volume Trx</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    @forelse(session('scan_results') as $res)
+                    <tr class="hover:bg-red-50/50">
+                        <td class="p-3 font-bold text-gray-800 uppercase">{{ $res['customer_name'] }}</td>
+                        <td class="p-3 font-mono text-gray-600">{{ $res['identity_no'] }}</td>
+                        <td class="p-3 font-bold text-red-600 uppercase">{{ $res['matched_with'] }}</td>
+                        <td class="p-3 text-gray-700 italic">{{ $res['reason'] }}</td>
+                        <td class="p-3 text-right font-mono font-bold">Rp {{ number_format($res['total_volume']) }}</td>
+                    </tr>
+                    @empty
+                    <tr>
+                        <td colspan="5" class="p-4 text-center text-green-600 font-bold">
+                            Aman! Tidak ada satupun nasabah yang cocok dengan database DTTOT.
+                        </td>
+                    </tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+    </div>
+    @endif
+
     {{-- DAFTAR LAPORAN (GRID CARD) --}}
     <div class="grid grid-cols-1 gap-4">
         @forelse($reports as $report)
