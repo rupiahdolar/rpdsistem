@@ -213,47 +213,52 @@ class ComplianceController extends Controller
 
     public function scanDttot(Request $request)
     {
+        // 1. Longgarkan waktu eksekusi dan memori khusus untuk proses screening
+        ini_set('memory_limit', '512M');
+        set_time_limit(120); // Beri waktu hingga 2 menit
+
+        // 2. Ambil data nasabah unik berdasarkan NIK atau Nama dari tabel transaksi
         $customers = Transaction::select('customer_name', 'customer_identity_no', 'customer_country', 'created_at', 'total_idr', 'no_nota')
                         ->whereNotNull('customer_name')
                         ->get()
                         ->unique('customer_identity_no');
 
-        $dttotDatabase = DttotList::all();
         $scanResults = [];
 
+        // 3. Optimasi Query: Cek langsung ke database DTTOT per nasabah (jauh lebih cepat daripada PHP looping semua)
         foreach ($customers as $cust) {
-            foreach ($dttotDatabase as $dttot) {
-                $isMatch = false;
-                $matchReason = '';
+            $matchedDttot = null;
+            $matchReason = '';
 
-                if (!empty($cust->customer_identity_no) && !empty($dttot->densus_code)) {
-                    if (trim($cust->customer_identity_no) === trim($dttot->densus_code)) {
-                        $isMatch = true;
-                        $matchReason = 'Kecocokan Persis Nomor Identitas / Kode Densus';
-                    }
+            // A. Cek berdasarkan NIK / Nomor Identitas (Pencocokan Persis)
+            if (!empty($cust->customer_identity_no)) {
+                $matchedDttot = DttotList::where('densus_code', 'LIKE', '%' . trim($cust->customer_identity_no) . '%')->first();
+                if ($matchedDttot) {
+                    $matchReason = 'Kecocokan Persis Nomor Identitas / Densus Code';
                 }
+            }
 
-                $custNameClean = strtoupper(trim($cust->customer_name));
-                $dttotNameClean = strtoupper(trim($dttot->name));
-
-                if (!empty($custNameClean) && !empty($dttotNameClean)) {
-                    if ($custNameClean === $dttotNameClean || levenshtein($custNameClean, $dttotNameClean) <= 3) {
-                        $isMatch = true;
-                        $matchReason = 'Kecocokan / Kemiripan Nama ("' . $dttot->name . '")';
-                    }
+            // B. Jika NIK tidak ketemu, cek berdasarkan kemiripan Nama
+            if (!$matchedDttot && !empty($cust->customer_name)) {
+                $cleanName = strtoupper(trim($cust->customer_name));
+                // Cari nama yang sama persis atau mengandung kata yang sama di database DTTOT
+                $matchedDttot = DttotList::where('name', 'LIKE', '%' . $cleanName . '%')->first();
+                if ($matchedDttot) {
+                    $matchReason = 'Kecocokan / Kemiripan Nama ("' . $matchedDttot->name . '")';
                 }
+            }
 
-                if ($isMatch) {
-                    $scanResults[] = [
-                        'customer_name' => $cust->customer_name,
-                        'identity_no'   => $cust->customer_identity_no ?? '-',
-                        'matched_with'  => $dttot->name,
-                        'densus_code'   => $dttot->densus_code ?? '-',
-                        'reason'        => $matchReason,
-                        'last_trx'      => $cust->created_at,
-                        'total_volume'  => $cust->total_idr,
-                    ];
-                }
+            // Jika ditemukan kecocokan, masukkan ke array hasil
+            if ($matchedDttot) {
+                $scanResults[] = [
+                    'customer_name' => $cust->customer_name,
+                    'identity_no'   => $cust->customer_identity_no ?? '-',
+                    'matched_with'  => $matchedDttot->name,
+                    'densus_code'   => $matchedDttot->densus_code ?? '-',
+                    'reason'        => $matchReason,
+                    'last_trx'      => $cust->created_at,
+                    'total_volume'  => $cust->total_idr,
+                ];
             }
         }
 
