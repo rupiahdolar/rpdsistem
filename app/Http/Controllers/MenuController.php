@@ -482,27 +482,41 @@ class MenuController extends Controller
      */
     public function kyc(Request $request) 
     {
+        date_default_timezone_set('Asia/Makassar');
         $user = Auth::user();
 
-        // 1. Ambil Input Tanggal (Default Hari Ini) & Cabang
-        $date = $request->input('date', date('Y-m-d'));
-        $branchId = $request->input('branch_id');
+        // 1. Ambil Input Rentang Tanggal (Default Hari Ini, tetap support parameter 'date' lama)
+        $defaultDate = $request->input('date', date('Y-m-d'));
+        $startDate   = $request->input('start_date', $defaultDate);
+        $endDate     = $request->input('end_date', $defaultDate);
+        $search      = $request->input('search');
+        $riskFilter  = $request->input('risk'); // Opsional filter HIGH / MEDIUM / LOW
+        $branchId    = $request->input('branch_id');
+
+        // Pastikan startDate <= endDate
+        if ($startDate > $endDate) {
+            [$startDate, $endDate] = [$endDate, $startDate];
+        }
 
         // 2. Siapkan Data Cabang untuk Dropdown
         $branches = [];
         if ($user->role === 'owner' || $user->role === 'admin') {
-            $branches = Branch::all();
+            $branches = Branch::select('id', 'name')->get();
         }
 
-        // 3. Query Aggregat (Kelompokkan by Nasabah berdasarkan NIK/Identitas agar akurat)
+        // 3. Query Aggregat Index-Friendly (Group by No Identitas agar tidak pecah baris)
         $query = Transaction::select(
-                        'customer_name', 'customer_identity_no', 'customer_country', 
-                        'customer_address', 'customer_job',
-                        DB::raw('COUNT(*) as freq'), 
+                        'customer_identity_no',
+                        DB::raw('MAX(customer_name) as customer_name'),
+                        DB::raw('MAX(customer_country) as customer_country'),
+                        DB::raw('MAX(customer_address) as customer_address'),
+                        DB::raw('MAX(customer_job) as customer_job'),
+                        DB::raw('COUNT(*) as freq'),
                         DB::raw('SUM(total_idr) as total_volume')
                     )
-                    ->whereDate('created_at', $date) // Filter Harian
-                    ->whereNotNull('customer_name');
+                    ->whereBetween('created_at', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])
+                    ->whereNotNull('customer_name')
+                    ->where('customer_identity_no', '!=', '');
 
         // 4. Filter Cabang (Sesuai Role)
         if ($user->role === 'owner' || $user->role === 'admin') {
@@ -514,45 +528,69 @@ class MenuController extends Controller
             $query->whereIn('branch_id', $myBranchIds);
         }
 
-        // 5. Eksekusi Query
-        $kycData = $query->groupBy('customer_identity_no', 'customer_name', 'customer_country', 'customer_address', 'customer_job')
-                    ->orderByDesc('total_volume') 
-                    ->get();
+        // 5. Filter Pencarian Nama / No ID (jika diisi)
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('customer_name', 'LIKE', "%{$search}%")
+                  ->orWhere('customer_identity_no', 'LIKE', "%{$search}%");
+            });
+        }
 
-        // 6. Analisis Risiko (Kombinasi Threshold USD 10.000 & Regulasi LTKT Rp 500 Juta)
-        $usdRate = self::getThresholdRate(); // Tetap mengambil rate acuan yang kamu simpan
-        $dynamicLimitIDR = 10000 * $usdRate;  // Limit Rupiah untuk USD 10.000 (Medium Risk)
-        $ltktLimitIDR    = 500000000;         // Limit Resmi PPATK Rp 500 Juta (High Risk - LTKT)
+        // 6. Eksekusi Query Aggregat
+        $allKycData = $query->groupBy('customer_identity_no')
+                            ->orderByDesc('total_volume')
+                            ->get();
 
-        $kycData->map(function ($row) use ($dynamicLimitIDR, $ltktLimitIDR) {
-            $riskLevel = 'LOW'; 
-            $riskColor = 'green'; 
-            $action    = 'Wajar';
-            
-            // Kategori 1: HIGH RISK
+        // 7. Analisis Risiko & Hitung Statistik Summary Sekaligus (1x Loop)
+        $usdRate         = self::getThresholdRate();
+        $dynamicLimitIDR = 10000 * $usdRate;
+        $ltktLimitIDR    = 500000000;
+
+        $summary = ['LOW' => 0, 'MEDIUM' => 0, 'HIGH' => 0];
+
+        $allKycData->each(function ($row) use ($dynamicLimitIDR, $ltktLimitIDR, &$summary) {
             if ($row->total_volume >= $ltktLimitIDR) {
-                $riskLevel = 'HIGH'; 
-                $riskColor = 'red'; 
-                $action    = 'Wajib Lapor LTKT (≥ Rp 500Jt)';
+                $row->risk_level = 'HIGH';
+                $row->risk_color = 'red';
+                $row->action     = 'Wajib Lapor LTKT (≥ Rp 500Jt)';
             } elseif ($row->freq >= 5) {
-                $riskLevel = 'HIGH'; 
-                $riskColor = 'red'; 
-                $action    = 'Indikasi Structuring (Analisis TKM)';
-            } 
-            // Kategori 2: MEDIUM RISK (Pemicu dari Pengaturan Kurs USD 10.000 atau Frekuensi >= 3x)
-            elseif ($row->total_volume >= $dynamicLimitIDR || $row->freq >= 3) {
-                $riskLevel = 'MEDIUM'; 
-                $riskColor = 'yellow'; 
-                $action    = 'Pantau Dokumen & Profil (EDD)';
+                $row->risk_level = 'HIGH';
+                $row->risk_color = 'red';
+                $row->action     = 'Indikasi Structuring (Analisis TKM)';
+            } elseif ($row->total_volume >= $dynamicLimitIDR || $row->freq >= 3) {
+                $row->risk_level = 'MEDIUM';
+                $row->risk_color = 'yellow';
+                $row->action     = 'Pantau Dokumen & Profil (EDD)';
+            } else {
+                $row->risk_level = 'LOW';
+                $row->risk_color = 'green';
+                $row->action     = 'Wajar';
             }
-            
-            $row->risk_level = $riskLevel; 
-            $row->risk_color = $riskColor; 
-            $row->action     = $action;
-            return $row;
+
+            $summary[$row->risk_level]++;
         });
 
-        return view('admin.customers.kyc', compact('date', 'branchId', 'branches', 'kycData', 'usdRate', 'dynamicLimitIDR'));
+        // Filter berdasarkan kartu risiko jika diklik
+        $filteredKyc = $riskFilter 
+            ? $allKycData->where('risk_level', $riskFilter)->values() 
+            : $allKycData;
+
+        // 8. Paginasi Manual di Collection (Max 50 baris per halaman agar DOM ringan)
+        $perPage     = 50;
+        $currentPage = \Illuminate\Pagination\Paginator::resolveCurrentPage() ?: 1;
+        $kycData     = new \Illuminate\Pagination\LengthAwarePaginator(
+            $filteredKyc->forPage($currentPage, $perPage)->values(),
+            $filteredKyc->count(),
+            $perPage,
+            $currentPage,
+            ['path' => $request->url(), 'query' => $request->query()]
+        );
+
+        return view('admin.customers.kyc', compact(
+            'startDate', 'endDate', 'search', 'riskFilter',
+            'branchId', 'branches', 'kycData', 'summary',
+            'usdRate', 'dynamicLimitIDR'
+        ));
     }
 
     /**

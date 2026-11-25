@@ -10,28 +10,31 @@ use App\Models\Transaction;
 use App\Models\InitialCapital;
 use App\Models\Expense;
 use App\Models\InternalMutation;
+use App\Models\LoanReceipt;
+use App\Models\DebtPayment;
+use App\Models\ChartOfAccount;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 
 class AdminController extends Controller
 {
     // ==========================================
-    // 0. DASHBOARD UTAMA (EXECUTIVE DASHBOARD) - [OPTIMIZED]
+    // 0. DASHBOARD UTAMA (EXECUTIVE DASHBOARD) - [SYNCED & FAST]
     // ==========================================
     public function index(Request $request)
     {
         $user = auth()->user();
-        
-        // 1. Tentukan Target Cabang (Logic Multi-Branch) - [TIDAK DIUBAH]
-        $branches = Branch::all();
+
+        // 1. Tentukan Target Cabang (Logic Multi-Branch)
+        $branches = Branch::select('id', 'name')->get();
         $targetBranchIds = [];
         $branchName = 'SEMUA CABANG';
-        $branchId = $request->input('branch_id'); 
+        $branchId = $request->input('branch_id');
 
-        // Logika Hak Akses
         if ($user->role == 'cashier') {
             $myBranchId = $user->branch_id ?? ($user->branches->first()->id ?? null);
             if (!$myBranchId) {
@@ -41,179 +44,265 @@ class AdminController extends Controller
             } else {
                 $branchId = $myBranchId;
                 $targetBranchIds = [$myBranchId];
-                $branchName = Branch::find($myBranchId)->name ?? '-';
+                $branchName = $branches->firstWhere('id', $myBranchId)->name ?? '-';
             }
         } else {
-            // Admin/Owner
             if ($branchId) {
-                $targetBranchIds = [$branchId];
-                $branchName = Branch::find($branchId)->name ?? '-';
+                $targetBranchIds = [(int) $branchId];
+                $branchName = $branches->firstWhere('id', $branchId)->name ?? '-';
             } else {
-                $targetBranchIds = Branch::pluck('id')->toArray();
-                $branchId = ''; 
+                $targetBranchIds = $branches->pluck('id')->toArray();
+                $branchId = '';
             }
         }
 
-        // 2. Ringkasan Harian (Today Stats) - [OPTIMIZED]
-        $today = date('Y-m-d');
-        
-        // Menggunakan SQL Aggregate langsung, tidak perlu get() lalu count()
-        $stats = Transaction::selectRaw('COUNT(*) as count, SUM(CASE WHEN type="buy" THEN total_idr ELSE 0 END) as buy_idr, SUM(CASE WHEN type="sell" THEN total_idr ELSE 0 END) as sell_idr')
-            ->whereDate('created_at', $today)
-            ->whereIn('branch_id', $targetBranchIds)
-            ->first();
+        // Buat versi snapshot dinamis dari waktu update terakhir masing-masing tabel
+        // Jika ada input baru di salah satu tabel, cache otomatis ter-refresh secara real-time!
+        $versionHash = md5(json_encode([
+            $targetBranchIds,
+            date('Y-m-d'),
+            DB::table('transactions')->max('id'),
+            DB::table('expenses')->max('updated_at'),
+            DB::table('internal_mutations')->max('updated_at'),
+            DB::table('debt_payments')->max('updated_at'),
+            DB::table('loan_receipts')->max('updated_at'),
+            DB::table('initial_capitals')->max('updated_at'),
+        ]));
 
-        $todayStats = [
-            'count' => $stats->count ?? 0,
-            'buy_idr' => $stats->buy_idr ?? 0,
-            'sell_idr' => $stats->sell_idr ?? 0,
-        ];
+        $cacheKey = 'admin_dashboard_data_' . $versionHash;
 
-        // 3. Hitung Stok Valas Real-time (AKUMULASI PER CABANG) - [HEAVILY OPTIMIZED]
-        
-        $customOrder = ['USD', 'AUD', 'EUR', 'GBP', 'CHF', 'JPY', 'SGD', 'CAD', 'MYR', 'NZD', 'HKD', 'CNY', 'BND', 'SAR', 'AED', 'THB', 'PHP', 'SEK', 'NOK', 'DKK', 'KRW', 'TWD'];
-        $allCurrencies = Currency::where('is_active', 1)->get();
-        
-        $aggregatedStocks = []; 
-        foreach ($allCurrencies as $c) {
-            $aggregatedStocks[$c->code] = ['name' => $c->name, 'qty' => 0, 'valuation' => 0];
-        }
+        $dashboardData = Cache::remember($cacheKey, now()->addMinutes(10), function () use ($targetBranchIds) {
+            if (empty($targetBranchIds)) {
+                return [
+                    'todayStats' => ['count' => 0, 'buy_idr' => 0, 'sell_idr' => 0],
+                    'liveStocks' => [],
+                    'currentCash' => 0,
+                    'totalValuation' => 0,
+                    'chartData' => ['labels' => [], 'buy' => [], 'sell' => []],
+                ];
+            }
 
-        // Looping Setiap Cabang Target
-        foreach ($targetBranchIds as $bId) {
-            // Ambil Modal Awal Terakhir Cabang Ini
-            $lastCap = InitialCapital::where('branch_id', $bId)->orderBy('date', 'desc')->first();
-            $capDate = $lastCap ? $lastCap->date : '2000-01-01';
-            
-            $capStocks = ($lastCap && $lastCap->forex_stocks) 
-                ? (is_string($lastCap->forex_stocks) ? json_decode($lastCap->forex_stocks, true) : $lastCap->forex_stocks)
-                : [];
+            // ---------------------------------------------------------
+            // 2. RINGKASAN HARIAN (Index-Friendly Range Query)
+            // ---------------------------------------------------------
+            $todayStart = date('Y-m-d 00:00:00');
+            $todayEnd   = date('Y-m-d 23:59:59');
 
-            // [OPTIMASI SQL] Ambil Summary Transaksi langsung via SQL Group By
-            // Tidak mengambil raw data transaksi (ribuan baris), hanya mengambil rekapnya (puluhan baris)
-            $trxSums = Transaction::where('branch_id', $bId)
+            $stats = Transaction::selectRaw('
+                    COUNT(*) as count,
+                    SUM(CASE WHEN type = "buy" THEN total_idr ELSE 0 END) as buy_idr,
+                    SUM(CASE WHEN type = "sell" THEN total_idr ELSE 0 END) as sell_idr
+                ')
+                ->whereBetween('created_at', [$todayStart, $todayEnd])
+                ->whereIn('branch_id', $targetBranchIds)
+                ->first();
+
+            $todayStats = [
+                'count'    => $stats->count ?? 0,
+                'buy_idr'  => $stats->buy_idr ?? 0,
+                'sell_idr' => $stats->sell_idr ?? 0,
+            ];
+
+            // ---------------------------------------------------------
+            // AMBIL MODAL AWAL TERAKHIR PER CABANG (1 QUERY SAJA)
+            // ---------------------------------------------------------
+            $latestCapSub = InitialCapital::select('branch_id', DB::raw('MAX(date) as max_date'))
+                ->whereIn('branch_id', $targetBranchIds)
+                ->groupBy('branch_id');
+
+            $lastCapitals = InitialCapital::joinSub($latestCapSub, 'latest_cap', function ($join) {
+                    $join->on('initial_capitals.branch_id', '=', 'latest_cap.branch_id')
+                         ->on('initial_capitals.date', '=', 'latest_cap.max_date');
+                })
+                ->select('initial_capitals.*')
+                ->orderBy('initial_capitals.id', 'desc')
+                ->get()
+                ->unique('branch_id')
+                ->keyBy('branch_id');
+
+            // Tentukan batas tanggal minimum dari semua cabang target untuk query kolektif
+            $minCapDate = '2000-01-01';
+            if ($lastCapitals->isNotEmpty()) {
+                $minCapDate = $lastCapitals->min('date');
+            }
+
+            // ---------------------------------------------------------
+            // 3. HITUNG STOK VALAS REAL-TIME (TANPA QUERY DI DALAM LOOP)
+            // ---------------------------------------------------------
+            $customOrder = ['USD', 'AUD', 'EUR', 'GBP', 'CHF', 'JPY', 'SGD', 'CAD', 'MYR', 'NZD', 'HKD', 'CNY', 'BND', 'SAR', 'AED', 'THB', 'PHP', 'SEK', 'NOK', 'DKK', 'KRW', 'TWD'];
+            $allCurrencies = Currency::where('is_active', 1)->get();
+
+            // Ambil semua agregasi transaksi valas sejak $minCapDate dalam 1 query
+            $allTrxSums = Transaction::whereIn('branch_id', $targetBranchIds)
+                ->where('created_at', '>=', $minCapDate . ' 00:00:00')
+                ->selectRaw('branch_id, currency, type, SUM(amount_foreign) as total_qty, SUM(total_idr) as total_val')
+                ->groupBy('branch_id', 'currency', 'type')
+                ->get();
+
+            $aggregatedStocks = [];
+            foreach ($allCurrencies as $c) {
+                $aggregatedStocks[$c->code] = ['name' => $c->name, 'qty' => 0, 'valuation' => 0];
+            }
+
+            foreach ($targetBranchIds as $bId) {
+                $lastCap = $lastCapitals->get($bId);
+                $capStocks = ($lastCap && $lastCap->forex_stocks)
+                    ? (is_string($lastCap->forex_stocks) ? json_decode($lastCap->forex_stocks, true) : $lastCap->forex_stocks)
+                    : [];
+
+                // Jika tanggal modal cabang ini lebih baru dari $minCapDate, pastikan pakai data sejak $capDate cabang ini
+                $capDate = $lastCap ? $lastCap->date : '2000-01-01';
+                $branchTrxSums = ($capDate === $minCapDate)
+                    ? $allTrxSums->where('branch_id', $bId)
+                    : Transaction::where('branch_id', $bId)
                         ->where('created_at', '>=', $capDate . ' 00:00:00')
                         ->selectRaw('currency, type, SUM(amount_foreign) as total_qty, SUM(total_idr) as total_val')
                         ->groupBy('currency', 'type')
-                        ->get(); // Hasilnya kecil, aman di memori
+                        ->get();
 
-            // Hitung Saldo Akhir Cabang Ini
-            foreach ($allCurrencies as $curr) {
-                $code = $curr->code;
-                
-                $stockData = $capStocks[$code] ?? []; 
-                $startQty = $stockData['qty'] ?? 0;   
-                $avgRate  = $stockData['rate'] ?? 0;  
-                
-                // Ambil data dari Collection Summary (Tanpa Query Lagi)
-                $buyRow = $trxSums->where('currency', $code)->where('type', 'buy')->first();
-                $sellRow = $trxSums->where('currency', $code)->where('type', 'sell')->first();
+                foreach ($allCurrencies as $curr) {
+                    $code = $curr->code;
+                    $stockData = $capStocks[$code] ?? [];
+                    $startQty  = $stockData['qty'] ?? 0;
+                    $avgRate   = $stockData['rate'] ?? 0;
 
-                $buyQty = $buyRow ? $buyRow->total_qty : 0;
-                $buyVal = $buyRow ? $buyRow->total_val : 0;
-                $sellQty = $sellRow ? $sellRow->total_qty : 0;
+                    $buyRow  = $branchTrxSums->where('currency', $code)->where('type', 'buy')->first();
+                    $sellRow = $branchTrxSums->where('currency', $code)->where('type', 'sell')->first();
 
-                $currQty = $startQty + $buyQty - $sellQty;
+                    $buyQty  = $buyRow ? $buyRow->total_qty : 0;
+                    $buyVal  = $buyRow ? $buyRow->total_val : 0;
+                    $sellQty = $sellRow ? $sellRow->total_qty : 0;
 
-                // Hitung Valuasi
-                $totalQtyIn = $startQty + $buyQty;
-                $totalValIn = ($startQty * $avgRate) + $buyVal;
-                
-                $currentBranchAvgRate = ($totalQtyIn > 0) ? ($totalValIn / $totalQtyIn) : $avgRate;
-                $currentBranchValuation = $currQty * $currentBranchAvgRate;
+                    $currQty = $startQty + $buyQty - $sellQty;
 
-                // Masukkan ke Wadah Global
-                $aggregatedStocks[$code]['qty'] += $currQty;
-                $aggregatedStocks[$code]['valuation'] += $currentBranchValuation;
+                    if ($currQty <= 0) {
+                        $currQty = 0;
+                        $currentBranchValuation = 0;
+                    } else {
+                        $totalQtyIn = $startQty + $buyQty;
+                        $totalValIn = ($startQty * $avgRate) + $buyVal;
+                        $currentBranchAvgRate = ($totalQtyIn > 0) ? ($totalValIn / $totalQtyIn) : $avgRate;
+                        $currentBranchValuation = $currQty * $currentBranchAvgRate;
+                    }
+
+                    $aggregatedStocks[$code]['qty'] += $currQty;
+                    $aggregatedStocks[$code]['valuation'] += $currentBranchValuation;
+                }
             }
-        }
 
-        // Finalisasi Data Stok (Sorting & Formatting)
-        $liveStocks = [];
-        $totalValuation = 0;
-        
-        $sortedCurrencies = $allCurrencies->sortBy(function($model) use ($customOrder) {
-            $pos = array_search($model->code, $customOrder);
-            return $pos === false ? 999 : $pos;
+            $liveStocks = [];
+            $totalValuation = 0;
+
+            $sortedCurrencies = $allCurrencies->sortBy(function ($model) use ($customOrder) {
+                $pos = array_search($model->code, $customOrder);
+                return $pos === false ? 999 : $pos;
+            });
+
+            foreach ($sortedCurrencies as $curr) {
+                $data = $aggregatedStocks[$curr->code];
+                $qty = $data['qty'];
+                $val = $data['valuation'];
+                $globalAvgRate = ($qty != 0) ? ($val / $qty) : 0;
+
+                $liveStocks[] = [
+                    'code'      => $curr->code,
+                    'name'      => $data['name'],
+                    'qty'       => $qty,
+                    'avg_rate'  => $globalAvgRate,
+                    'valuation' => $val,
+                ];
+                $totalValuation += $val;
+            }
+
+            // ---------------------------------------------------------
+            // 4. HITUNG SALDO KAS FISIK (RUPIAH) - SINKRON DGN MUTASI & PINJAMAN
+            // ---------------------------------------------------------
+            $cashAccountIds = ChartOfAccount::where('type', 'ASSET')
+                ->where(function ($q) {
+                    $q->where('code', '1-1002')->orWhere('name', 'LIKE', '%KAS%');
+                })
+                ->where('name', 'NOT LIKE', '%BANK%')
+                ->pluck('id')
+                ->toArray();
+
+            $currentCash = 0;
+            foreach ($targetBranchIds as $bId) {
+                $lastCap   = $lastCapitals->get($bId);
+                $startCash = $lastCap ? $lastCap->amount : 0;
+                $dateCash  = $lastCap ? $lastCap->date : '2000-01-01';
+
+                // Transaksi TUNAI saja (sama seperti MutationController)
+                $trxCash = Transaction::selectRaw('
+                        SUM(CASE WHEN type = "sell" THEN total_idr ELSE 0 END) as cash_in,
+                        SUM(CASE WHEN type = "buy" THEN total_idr ELSE 0 END) as cash_out
+                    ')
+                    ->where('branch_id', $bId)
+                    ->where('payment_method', 'CASH')
+                    ->where('created_at', '>=', $dateCash . ' 00:00:00')
+                    ->first();
+
+                $cashIn  = $trxCash->cash_in ?? 0;
+                $cashOut = $trxCash->cash_out ?? 0;
+
+                // Biaya Operasional
+                $expenses = Expense::where('branch_id', $bId)
+                    ->where('date', '>=', $dateCash)
+                    ->sum('amount');
+
+                // Mutasi Internal Bank <-> Kas
+                $mutations = InternalMutation::selectRaw('type, SUM(amount) as total')
+                    ->where('branch_id', $bId)
+                    ->where('transaction_date', '>=', $dateCash)
+                    ->groupBy('type')
+                    ->pluck('total', 'type');
+
+                $bankToCash = $mutations['bank_to_cash'] ?? 0;
+                $cashToBank = $mutations['cash_to_bank'] ?? 0;
+
+                // [FIX SINKRONISASI] Penerimaan Pinjaman & Pembayaran Utang (Pokok + Bunga)
+                $loanCashIn = LoanReceipt::where('branch_id', $bId)
+                    ->where('date', '>=', $dateCash)
+                    ->whereIn('cash_account_id', $cashAccountIds)
+                    ->sum('amount');
+
+                $debtCashOut = DebtPayment::where('branch_id', $bId)
+                    ->where('date', '>=', $dateCash)
+                    ->whereIn('payment_account_id', $cashAccountIds)
+                    ->sum(DB::raw('amount + interest_amount'));
+
+                $currentCash += ($startCash + $cashIn - $cashOut - $expenses + $bankToCash - $cashToBank + $loanCashIn - $debtCashOut);
+            }
+
+            // ---------------------------------------------------------
+            // 5. DATA GRAFIK 7 HARI TERAKHIR
+            // ---------------------------------------------------------
+            $chartData = ['labels' => [], 'buy' => [], 'sell' => []];
+            $startDate = Carbon::now()->subDays(6)->startOfDay();
+
+            $rawChart = Transaction::whereIn('branch_id', $targetBranchIds)
+                ->where('created_at', '>=', $startDate)
+                ->selectRaw('DATE(created_at) as date, type, SUM(total_idr) as total')
+                ->groupBy('date', 'type')
+                ->get();
+
+            for ($i = 6; $i >= 0; $i--) {
+                $d = Carbon::now()->subDays($i)->format('Y-m-d');
+                $chartData['labels'][] = Carbon::parse($d)->format('d M');
+
+                $dayBuy  = $rawChart->where('date', $d)->where('type', 'buy')->first();
+                $daySell = $rawChart->where('date', $d)->where('type', 'sell')->first();
+
+                $chartData['buy'][]  = $dayBuy ? $dayBuy->total : 0;
+                $chartData['sell'][] = $daySell ? $daySell->total : 0;
+            }
+
+            return compact('todayStats', 'liveStocks', 'currentCash', 'totalValuation', 'chartData');
         });
 
-        foreach ($sortedCurrencies as $curr) {
-            $data = $aggregatedStocks[$curr->code];
-            $qty = $data['qty'];
-            $val = $data['valuation'];
-            
-            // Hindari devision by zero
-            $globalAvgRate = ($qty != 0) ? ($val / $qty) : 0;
-            
-            $liveStocks[] = [
-                'code' => $curr->code,
-                'name' => $data['name'],
-                'qty' => $qty,
-                'avg_rate' => $globalAvgRate,
-                'valuation' => $val
-            ];
-            $totalValuation += $val;
-        }
-
-        // 4. Hitung Saldo Kas Fisik (Rupiah) - [OPTIMIZED]
-        $currentCash = 0;
-        foreach ($targetBranchIds as $bId) {
-            $lastCap = InitialCapital::where('branch_id', $bId)->orderBy('date', 'desc')->first();
-            $startCash = $lastCap ? $lastCap->amount : 0;
-            $dateCash = $lastCap ? $lastCap->date : '2000-01-01';
-            
-            // Gunakan SUM langsung di SQL, jangan load data
-            $trxCash = Transaction::selectRaw('SUM(CASE WHEN type="sell" THEN total_idr ELSE 0 END) as cash_in, SUM(CASE WHEN type="buy" THEN total_idr ELSE 0 END) as cash_out')
-                ->where('branch_id', $bId)
-                ->where('created_at', '>=', $dateCash . ' 00:00:00')
-                ->first();
-            
-            $cashIn = $trxCash->cash_in ?? 0;
-            $cashOut = $trxCash->cash_out ?? 0;
-
-            $expenses = Expense::where('branch_id', $bId)->where('date', '>=', $dateCash)->sum('amount');
-            
-            $mutations = InternalMutation::selectRaw('type, SUM(amount) as total')
-                ->where('branch_id', $bId)
-                ->where('transaction_date', '>=', $dateCash)
-                ->groupBy('type')
-                ->pluck('total', 'type');
-
-            $bankToCash = $mutations['bank_to_cash'] ?? 0;
-            $cashToBank = $mutations['cash_to_bank'] ?? 0;
-            
-            $currentCash += ($startCash + $cashIn - $cashOut - $expenses + $bankToCash - $cashToBank);
-        }
-
-        // 5. Data Grafik - [OPTIMIZED]
-        // Menggunakan 1 Query untuk 7 hari (Solving N+1 Problem)
-        $chartData = ['labels' => [], 'buy' => [], 'sell' => []];
-        $startDate = Carbon::now()->subDays(6)->startOfDay(); // 7 hari terakhir (termasuk hari ini)
-        
-        $rawChart = Transaction::whereIn('branch_id', $targetBranchIds)
-                    ->where('created_at', '>=', $startDate)
-                    ->selectRaw('DATE(created_at) as date, type, SUM(total_idr) as total')
-                    ->groupBy('date', 'type')
-                    ->get();
-
-        // Mapping Data ke Array 7 Hari
-        for ($i = 6; $i >= 0; $i--) {
-            $d = Carbon::now()->subDays($i)->format('Y-m-d');
-            $chartData['labels'][] = Carbon::parse($d)->format('d M');
-            
-            // Ambil dari hasil query kolektif, bukan query ulang
-            $dayBuy = $rawChart->where('date', $d)->where('type', 'buy')->first();
-            $daySell = $rawChart->where('date', $d)->where('type', 'sell')->first();
-
-            $chartData['buy'][] = $dayBuy ? $dayBuy->total : 0;
-            $chartData['sell'][] = $daySell ? $daySell->total : 0;
-        }
-
-        return view('admin.dashboard', compact(
-            'branches', 'branchId', 'branchName',
-            'todayStats', 'liveStocks', 'currentCash', 'totalValuation',
-            'chartData'
-        )); 
+        return view('admin.dashboard', array_merge(
+            compact('branches', 'branchId', 'branchName'),
+            $dashboardData
+        ));
     }
 
     // ==========================================
