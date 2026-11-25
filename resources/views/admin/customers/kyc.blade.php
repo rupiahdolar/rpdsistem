@@ -90,7 +90,7 @@
                     <input type="date" name="end_date" value="{{ $endDate }}" class="border-gray-300 rounded-lg text-xs font-bold text-gray-700 focus:ring-primary focus:border-primary bg-white shadow-sm cursor-pointer h-10">
                 </div>
 
-                <button type="submit" class="bg-primary text-white px-4 h-10 rounded-lg text-xs font-bold hover:bg-opacity-90 shadow-sm transition">
+                <button type="submit" class="bg-primary text-white px-4 h-10 rounded-lg text-xs font-bold hover:bg-opacity-90 shadow-sm transition cursor-pointer">
                     Filter
                 </button>
             </form>
@@ -138,11 +138,38 @@
 
     {{-- TABEL DATA NASABAH --}}
     <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div class="overflow-x-auto">
-            <table class="w-full text-left border-collapse whitespace-nowrap">
+
+        {{-- BAR KONTROL GESER HORIZONTAL DI ATAS TABEL --}}
+        <div id="kycScrollToolbar" class="px-4 py-2.5 bg-gray-50 border-b border-gray-200 flex items-center justify-between gap-3">
+            <div class="flex items-center gap-2 shrink-0">
+                <button type="button" id="btnScrollLeft"
+                    class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-white text-gray-700 border border-gray-300 hover:bg-gray-100 shadow-sm transition cursor-pointer"
+                    title="Geser tabel ke kiri">
+                    <span>&larr;</span>
+                    <span>Kiri</span>
+                </button>
+                <button type="button" id="btnScrollRight"
+                    class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-primary text-white hover:bg-opacity-90 shadow-sm transition cursor-pointer"
+                    title="Geser tabel ke kanan">
+                    <span>Kanan</span>
+                    <span>&rarr;</span>
+                </button>
+            </div>
+
+            <div id="kycTopScroll" class="flex-1 overflow-x-auto h-4 bg-gray-200/70 rounded">
+                <div id="kycTopScrollInner" class="h-1"></div>
+            </div>
+
+            <span class="text-[11px] text-gray-400 font-medium hidden sm:inline shrink-0">
+                Geser horizontal
+            </span>
+        </div>
+
+        <div id="kycTableWrapper" class="overflow-x-auto">
+            <table id="kycTable" class="w-full text-left border-collapse whitespace-nowrap">
                 <thead class="bg-white text-primary border-b-2 border-primary uppercase text-xs tracking-wider font-bold">
                     <tr>
-                        <th class="px-6 py-4 text-center">Aksi</th>
+                        <th class="px-6 py-4 text-center sticky left-0 bg-white z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.08)]">Aksi</th>
                         <th class="px-6 py-4">Nama Nasabah</th>
                         <th class="px-6 py-4">Identitas</th>
                         <th class="px-6 py-4">Warga Negara</th>
@@ -155,10 +182,13 @@
                 
                 <tbody class="divide-y divide-gray-100 text-xs text-gray-700">
                     @forelse($kycData as $row)
-                    <tr class="transition duration-150 {{ $row->risk_level == 'HIGH' ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-blue-50' }}">
+                    @php
+                        $rowBg = $row->risk_level == 'HIGH' ? 'bg-red-50 group-hover:bg-red-100' : 'bg-white group-hover:bg-blue-50';
+                    @endphp
+                    <tr class="group transition duration-150 {{ $row->risk_level == 'HIGH' ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-blue-50' }}">
                         
-                        {{-- Tombol Aksi Tampilkan --}}
-                        <td class="px-6 py-4 text-center">
+                        {{-- Tombol Aksi Tampilkan (Sticky di Kiri) --}}
+                        <td class="px-6 py-4 text-center sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.06)] {{ $rowBg }}">
                             <a href="{{ route('nasabah.index', [
                                 'search'     => $row->customer_identity_no, 
                                 'start_date' => $startDate, 
@@ -257,4 +287,62 @@
         @endif
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const wrapper = document.getElementById('kycTableWrapper');
+    const table = document.getElementById('kycTable');
+    const topScroll = document.getElementById('kycTopScroll');
+    const topScrollInner = document.getElementById('kycTopScrollInner');
+    const toolbar = document.getElementById('kycScrollToolbar');
+    const btnLeft = document.getElementById('btnScrollLeft');
+    const btnRight = document.getElementById('btnScrollRight');
+
+    if (!wrapper || !table || !topScroll || !topScrollInner) return;
+
+    function syncScrollbarWidth() {
+        topScrollInner.style.width = table.scrollWidth + 'px';
+        const hasOverflow = table.scrollWidth > wrapper.clientWidth + 2;
+        if (toolbar) {
+            toolbar.classList.toggle('hidden', !hasOverflow);
+        }
+    }
+
+    let isSyncing = false;
+    topScroll.addEventListener('scroll', function () {
+        if (isSyncing) return;
+        isSyncing = true;
+        wrapper.scrollLeft = topScroll.scrollLeft;
+        requestAnimationFrame(() => { isSyncing = false; });
+    });
+
+    wrapper.addEventListener('scroll', function () {
+        if (isSyncing) return;
+        isSyncing = true;
+        topScroll.scrollLeft = wrapper.scrollLeft;
+        requestAnimationFrame(() => { isSyncing = false; });
+    });
+
+    if (btnLeft) {
+        btnLeft.addEventListener('click', function () {
+            wrapper.scrollBy({ left: -320, behavior: 'smooth' });
+        });
+    }
+
+    if (btnRight) {
+        btnRight.addEventListener('click', function () {
+            wrapper.scrollBy({ left: 320, behavior: 'smooth' });
+        });
+    }
+
+    syncScrollbarWidth();
+    window.addEventListener('resize', syncScrollbarWidth);
+});
+</script>
 @endsection
+```[cite: 9, 11]
+
+<ElicitationsGroup message="Langkah lanjutan jika ingin menyesuaikan halaman ini lebih jauh:">
+  <Elicitation label="Export CSV rentang KYC" query="Tolong tambahkan tombol export CSV di halaman Analisis KYC sesuai filter tanggal dan cabang yang sedang aktif."/>
+  <Elicitation label="Cek query bulanan KYC" query="Apakah method kyc di MenuController perlu dioptimasi lagi jika rentang tanggal 1 bulan punya puluhan ribu transaksi?"/>
+</ElicitationsGroup>
